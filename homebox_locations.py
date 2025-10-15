@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
 import qrcode
+
+from qrcode import constants, exceptions, util
+from qrcode.image.base import BaseImage
+from qrcode.image.pure import PyPNGImage
+from qrcode.image.pil import PilImage
 import requests
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
@@ -16,6 +21,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
+
 from reportlab.pdfgen import canvas
 
 try:
@@ -30,137 +37,30 @@ DEFAULT_PASSWORD = "7#1uL4cB@xrYKr"
 DEFAULT_BASE = "https://homebox.home.pfa.name"
 DEFAULT_TIMEOUT = 30
 
-FONT_CACHE_DIR = Path(__file__).resolve().parent / ".font_cache"
-FONT_SEARCH_PATHS = [
-    Path.home() / "Library" / "Fonts",
-    Path("/Library/Fonts"),
-    Path("/System/Library/Fonts"),
-]
 
-TITLE_FONT_NAME = "Inter-SemiBold-600"
-CONTENT_FONT_NAME = "Inter-Medium-500"
-EXTRA_FONT_NAME = "Inter-Medium-500"
+# --- Template geometry (in inches) ---
+PAGE_W, PAGE_H = letter  # 8.5 x 11 in in points
+inch_pt = inch
 
+label_w = 4.00 * inch_pt
+label_h = 2.00 * inch_pt
 
-def ensure_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
+cols = 2
+rows = 5
 
+# Margins and gaps chosen to exactly fill 8.5" width and 11" height
+# Adjust if your printer shifts: set offset_x, offset_y below.
+margin_left  = 0.17 * inch_pt
+margin_right = 0.17 * inch_pt
+margin_top   = 0.50 * inch_pt
+margin_bottom= 0.50 * inch_pt
 
-def register_font(font_name: str, font_path: Path) -> None:
-    if font_name not in pdfmetrics.getRegisteredFontNames():
-        pdfmetrics.registerFont(TTFont(font_name, str(font_path)))
+h_gap = 0.16 * inch_pt   # between columns
+v_gap = 0.00 * inch_pt   # between rows
 
-
-def enable_numeric_features(font_path: Path, features: Sequence[str] = ("tnum", "zero")) -> None:
-    if TTFontReader is None:
-        return
-    try:
-        font = TTFontReader(str(font_path))
-    except Exception:  # pragma: no cover - defensive
-        return
-    changed = False
-    if "GSUB" in font:
-        gsub_table = font["GSUB"].table
-        feature_list = getattr(gsub_table, "FeatureList", None)
-        script_list = getattr(gsub_table, "ScriptList", None)
-        if feature_list and script_list and feature_list.FeatureRecord:
-            feature_index_map = {
-                record.FeatureTag: idx for idx, record in enumerate(feature_list.FeatureRecord)
-            }
-            desired = [tag for tag in features if tag in feature_index_map]
-            if desired:
-                for script_record in script_list.ScriptRecord or []:
-                    lang_systems: List = []
-                    default_lang = getattr(script_record.Script, "DefaultLangSys", None)
-                    if default_lang:
-                        lang_systems.append(default_lang)
-                    for lang_record in getattr(script_record.Script, "LangSysRecord", []) or []:
-                        if lang_record.LangSys:
-                            lang_systems.append(lang_record.LangSys)
-                    for lang_sys in lang_systems:
-                        indices = list(getattr(lang_sys, "FeatureIndex", []))
-                        present = set(indices)
-                        updated = False
-                        for tag in desired:
-                            idx = feature_index_map[tag]
-                            if idx not in present:
-                                indices.append(idx)
-                                present.add(idx)
-                                updated = True
-                        if updated:
-                            lang_sys.FeatureIndex = indices
-                            lang_sys.FeatureCount = len(indices)
-                            changed = True
-    if changed:
-        font.save(str(font_path))
-    font.close()
-
-
-def instantiate_variable_font(source: Path, dest: Path, axes: Dict[str, float]) -> Path:
-    if dest.exists():
-        return dest
-    if TTFontReader is None or var_instancer is None:
-        raise SystemExit(
-            "fontTools with varLib is required to instantiate variable fonts without downloads."
-        )
-    font = TTFontReader(str(source))
-    var_instancer.instantiateVariableFont(font, axes, inplace=True)
-    for table in ("fvar", "gvar", "avar", "HVAR", "MVAR", "STAT", "meta"):
-        if table in font:
-            try:
-                del font[table]
-            except KeyError:
-                pass
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    font.save(str(dest))
-    font.close()
-    return dest
-
-
-def locate_font_file(candidates: Sequence[str]) -> Optional[Path]:
-    for directory in FONT_SEARCH_PATHS:
-        for candidate in candidates:
-            candidate_path = directory / candidate
-            if candidate_path.exists():
-                return candidate_path
-    return None
-
-
-def register_inter_fonts() -> None:
-    ensure_dir(FONT_CACHE_DIR)
-    variable_source = locate_font_file(
-        [
-            "InterVariable.ttf",
-            "InterVariable-Regular.ttf",
-            "InterVariable.otf",
-            "InterVariable (TrueType).ttf",
-        ]
-    )
-    if not variable_source:
-        raise SystemExit(
-            "InterVariable.ttf not found. Install the Inter variable font locally."
-        )
-    variable_path = FONT_CACHE_DIR / variable_source.name
-    if not variable_path.exists():
-        shutil.copy2(variable_source, variable_path)
-    title_path = instantiate_variable_font(
-        variable_path,
-        FONT_CACHE_DIR / "Inter-SemiBold-600.ttf",
-        {"wght": 600.0, "opsz": 14.0},
-    )
-    content_path = instantiate_variable_font(
-        variable_path,
-        FONT_CACHE_DIR / "Inter-Medium-500.ttf",
-        {"wght": 500.0, "opsz": 14.0},
-    )
-
-    for path in (title_path, content_path):
-        enable_numeric_features(path, ("tnum", "zero"))
-    register_font(TITLE_FONT_NAME, title_path)
-    register_font(CONTENT_FONT_NAME, content_path)
-    if EXTRA_FONT_NAME != CONTENT_FONT_NAME:
-        register_font(EXTRA_FONT_NAME, content_path)
-
+# Optional printer compensation offsets (positive moves right/up)
+offset_x = 0.00 * inch_pt
+offset_y = 0.00 * inch_pt
 
 def login(api_base: str, username: str, password: str) -> str:
     response = requests.post(
@@ -302,8 +202,7 @@ def draw_label(
     content: str,
     url: str,
     path_text: str = "",
-    categories_text: str = "",
-    add_qr: bool = True,
+    categories_text: str = ""
 ) -> None:
     pad = 0.12 * inch
     text_left = x + pad
@@ -312,12 +211,19 @@ def draw_label(
 
     qr_size = max(h - 2 * pad, 0)
     qr_drawn = False
-    if add_qr and url and qr_size > 0:
+    if url and qr_size > 0:
+        # qr_img = qrcode.make(url)
+        # pixel_width = qr_img.size[0]
+        
         buf = BytesIO()
-        qrcode.make(url).save(buf, format="PNG")
+        qr = qrcode.QRCode()
+        qr.add_data(url)
+        qr_img = qr.make_image()
+        qr_img.save(buf, format="PNG")
+        
         buf.seek(0)
-        img_x = x + pad
-        img_y = y + pad
+        img_x = x# + pad
+        img_y = y #+ pad
         c.drawImage(
             ImageReader(buf),
             img_x,
@@ -327,8 +233,16 @@ def draw_label(
             preserveAspectRatio=True,
             mask="auto",
         )
+        # Divider line between QR code and text column
+        # scale = qr_size / pixel_width
+        border_pt = qr.border * qr.box_size 
+        line_x = x + qr_size - 2 * border_pt
+        c.saveState()
+        c.setLineWidth(0.5)
+        c.line(line_x, img_y + border_pt, line_x, img_y + qr_size - border_pt)
+        c.restoreState()
         qr_drawn = True
-        text_left = img_x + qr_size + pad
+        text_left = line_x + border_pt
         text_width = max(text_right - text_left, 0)
 
     use_right_column = qr_drawn and text_width > 0
@@ -336,8 +250,8 @@ def draw_label(
     center_x = text_left + text_area_width / 2.0 if use_right_column else x + w / 2.0
 
     title = location_display_text(name)
-    title_size = shrink_fit(title, text_area_width, max_font=28, min_font=12, font_name=TITLE_FONT_NAME)
-    c.setFont(TITLE_FONT_NAME, title_size)
+    title_size = shrink_fit(title, text_area_width, max_font=28, min_font=12, font_name="Helvetica-Bold")
+    c.setFont("Helvetica-Bold", title_size)
     title_y = y + h - pad - title_size
     if use_right_column:
         c.drawString(text_left, title_y, title)
@@ -351,10 +265,10 @@ def draw_label(
             text_area_width,
             max_font=max(title_size - 2, 22),
             min_font=8,
-            font_name=CONTENT_FONT_NAME,
+            font_name="Helvetica-Bold",
         )
         content_y = title_y - content_size - 6
-        c.setFont(CONTENT_FONT_NAME, content_size)
+        c.setFont("Helvetica-Bold", content_size)
         if use_right_column:
             c.drawString(text_left, content_y, content_text)
         else:
@@ -378,35 +292,48 @@ def draw_label(
                 text_area_width,
                 max_font=max(content_size - 2, 12),
                 min_font=6,
-                font_name=EXTRA_FONT_NAME,
+                font_name="Helvetica-Bold",
             )
             current_y -= extra_size + 3
             if current_y < y + pad:
                 current_y = y + pad
-            c.setFont(EXTRA_FONT_NAME, extra_size)
+            c.setFont("Helvetica-Bold", extra_size)
             if use_right_column:
                 c.drawString(text_left, current_y, segment)
             else:
                 c.drawCentredString(center_x, current_y, segment)
 
+def template(c):
+    c.setLineWidth(0.5)
+
+    # sanity check to ensure geometry fills page
+    total_w = margin_left + cols*label_w + (cols-1)*h_gap + margin_right
+    total_h = margin_bottom + rows*label_h + (rows-1)*v_gap + margin_top
+    assert abs(total_w - PAGE_W) < 0.01, f"Width mismatch: {total_w} vs {PAGE_W}"
+    assert abs(total_h - PAGE_H) < 0.01, f"Height mismatch: {total_h} vs {PAGE_H}"
+
+    # draw label rectangles from bottom-left
+    for r in range(rows):
+        for c_idx in range(cols):
+            x = margin_left + c_idx*(label_w + h_gap) + offset_x
+            y = margin_bottom + r*(label_h + v_gap) + offset_y
+            c.rect(x, y, label_w, label_h)
+
+    
+def fetch_data():
+    pass
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Homebox locations -> Avery 2x4 PDF (5163/8163)"
     )
     parser.add_argument("-o", "--output", default="homebox_locations_5163.pdf")
-    parser.add_argument("--no-qr", action="store_true", help="Disable QR codes on labels")
     parser.add_argument(
         "--skip",
         type=int,
         default=0,
         help="Number of labels to skip at start of first sheet",
     )
-    parser.add_argument("--left-margin-in", type=float, default=0.15625)
-    parser.add_argument("--right-margin-in", type=float, default=0.15625)
-    parser.add_argument("--top-margin-in", type=float, default=0.5)
-    parser.add_argument("--bottom-margin-in", type=float, default=0.5)
-    parser.add_argument("--col-gap-in", type=float, default=0.1875)
     parser.add_argument(
         "--name-pattern",
         default="box.*",
@@ -416,8 +343,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--password", default=DEFAULT_PASSWORD)
     parser.add_argument("--base", default=DEFAULT_BASE)
     args = parser.parse_args(argv)
-
-    register_inter_fonts()
 
     api_base = f"{args.base.rstrip('/')}/api"
     token = login(api_base, args.username, args.password)
@@ -464,20 +389,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     label_h = 2.0 * inch
     cols, rows = 2, 5
 
-    left_margin = args.left_margin_in * inch
-    right_margin = args.right_margin_in * inch
-    top_margin = args.top_margin_in * inch
-    bottom_margin = args.bottom_margin_in * inch
-    col_gap = args.col_gap_in * inch
-
     total = len(label_items)
     skip = max(0, args.skip)
     i = 0
 
     c = canvas.Canvas(args.output, pagesize=letter)
+    template(c)
     while i < total or skip > 0:
-        x0 = left_margin
-        y0 = page_h - top_margin - label_h
+        x0 = margin_left
+        y0 = page_h - margin_top - label_h
         for row in range(rows):
             for col in range(cols):
                 if skip > 0:
@@ -486,7 +406,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if i >= total:
                     continue
                 item = label_items[i]
-                x = x0 + col * (label_w + col_gap)
+                x = x0 + col * (label_w + h_gap)
                 y = y0 - row * label_h
                 draw_label(
                     c,
@@ -498,8 +418,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     content=item["content"],
                     url=item["url"],
                     path_text=item["path"],
-                    categories_text=item["categories"],
-                    add_qr=not args.no_qr,
+                    categories_text=item["categories"],                  
                 )
                 i += 1
         c.showPage()
