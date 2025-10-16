@@ -1,0 +1,6 @@
+.env
+*.pdf
+.ruff_cache
+.venv
+.vscode
+*.pyc

@@ -1,0 +1,5 @@
+python-dotenv==1.1.1
+qrcode==8.2
+reportlab==4.4.4
+Pillow==11.3.0
+-e ../homebox_client

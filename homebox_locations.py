@@ -2,27 +2,26 @@
 """Generate Avery 5163 label sheets from Homebox location data."""
 
 import argparse
+import os
 import re
 import sys
 import textwrap
-from io import BytesIO
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from io import BytesIO
+from typing import Dict, List, Optional, Sequence, Tuple
+
+
+from homebox_client.exceptions import ApiException
+from dotenv import load_dotenv
 
 import qrcode
-import requests
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
-
-DEFAULT_USERNAME = "pfa@pfa.name"
-DEFAULT_PASSWORD = "7#1uL4cB@xrYKr"
-DEFAULT_BASE = "https://homebox.home.pfa.name"
-DEFAULT_TIMEOUT = 30
-
+from homebox_api import HomeboxApiManager
 
 # --- Template geometry (in inches) ---
 PAGE_W, PAGE_H = letter  # 8.5 x 11 in in points
@@ -50,13 +49,16 @@ OFFSET_Y = 0.00 * INCH_PT
 
 LABEL_PADDING = 0.12 * inch
 
+TITLE_FONT_SIZE = 28
+TEXT_BOTTOM_PAD = 0.06 * inch
+
 
 @dataclass(frozen=True)
 class LabelContent:
     """Textual payload to render into a label."""
 
     title: str
-    subtitle: str
+    content: str
     url: str
     path_text: str = ""
     categories_text: str = ""
@@ -78,7 +80,6 @@ class _TextColumn:
 
     left: float
     width: float
-    align_left: bool
 
 
 @dataclass(frozen=True)
@@ -89,82 +90,6 @@ class _TextContext:
     geometry: LabelGeometry
     column: _TextColumn
     center_x: float
-    text_area_width: float
-
-def login(api_base: str, username: str, password: str) -> str:
-    """Authenticate with the Homebox API and return a session token."""
-
-    response = requests.post(
-        f"{api_base}/v1/users/login",
-        data={"username": username, "password": password, "stayLoggedIn": "true"},
-        headers={"Accept": "application/json"},
-        timeout=DEFAULT_TIMEOUT,
-    )
-    response.raise_for_status()
-    token = response.json().get("token")
-    if not token:
-        raise SystemExit("Login succeeded but did not return a token.")
-    return token
-
-
-def auth_headers(token: str) -> Dict[str, str]:
-    """Build the authorization header payload."""
-
-    return {"Authorization": token, "Accept": "application/json"}
-
-
-def fetch_locations(api_base: str, token: str) -> List[Dict]:
-    """Fetch the flat list of available locations."""
-
-    response = requests.get(
-        f"{api_base}/v1/locations", headers=auth_headers(token), timeout=DEFAULT_TIMEOUT
-    )
-    response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, list):
-        raise SystemExit(f"/v1/locations returned unexpected payload: {type(data)}")
-    return data
-
-
-def fetch_location_tree(api_base: str, token: str) -> List[Dict]:
-    """Retrieve the hierarchical location tree."""
-
-    response = requests.get(
-        f"{api_base}/v1/locations/tree",
-        headers=auth_headers(token),
-        timeout=DEFAULT_TIMEOUT,
-    )
-    response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, list):
-        raise SystemExit(f"/v1/locations/tree returned unexpected payload: {type(data)}")
-    return data
-
-
-def fetch_location_detail(api_base: str, token: str, location_id: str) -> Dict:
-    """Fetch the API payload for a single location."""
-
-    response = requests.get(
-        f"{api_base}/v1/locations/{location_id}",
-        headers=auth_headers(token),
-        timeout=DEFAULT_TIMEOUT,
-    )
-    response.raise_for_status()
-    detail = response.json()
-    if not isinstance(detail, dict):
-        raise SystemExit(f"/v1/locations/{location_id} returned unexpected payload")
-    return detail
-
-
-def fetch_location_details(api_base: str, token: str, loc_ids: Iterable[str]) -> Dict[str, Dict]:
-    """Fetch details for all requested location ids."""
-
-    details: Dict[str, Dict] = {}
-    for loc_id in loc_ids:
-        if not loc_id:
-            continue
-        details[loc_id] = fetch_location_detail(api_base, token, loc_id)
-    return details
 
 
 def _filter_locations_by_name(locations: Sequence[Dict], pattern: Optional[str]) -> List[Dict]:
@@ -176,7 +101,8 @@ def _filter_locations_by_name(locations: Sequence[Dict], pattern: Optional[str])
     try:
         name_re = re.compile(pattern, re.IGNORECASE)
     except re.error as exc:
-        raise SystemExit(f"Invalid --name-pattern regex '{pattern}': {exc}") from exc
+        raise SystemExit(
+            f"Invalid --name-pattern regex '{pattern}': {exc}") from exc
 
     filtered = []
     for loc in locations:
@@ -273,21 +199,20 @@ def build_ui_url(base_ui: str, loc_id: str) -> str:
 
 
 def collect_label_contents(
-    api_base: str,
+    api_manager: HomeboxApiManager,
     base_ui: str,
-    token: str,
     name_pattern: Optional[str],
 ) -> List[LabelContent]:
     """Fetch locations and transform them into label-ready payloads."""
 
-    locations = fetch_locations(api_base, token)
+    locations = api_manager.list_locations()
     filtered_locations = _filter_locations_by_name(locations, name_pattern)
 
-    tree = fetch_location_tree(api_base, token)
+    tree = api_manager.get_location_tree()
     path_map = build_location_paths(tree)
 
     loc_ids = {loc.get("id") for loc in filtered_locations if loc.get("id")}
-    detail_map = fetch_location_details(api_base, token, loc_ids)
+    detail_map = api_manager.get_location_details(loc_ids)
 
     base_ui_clean = base_ui.rstrip("/")
     return [
@@ -306,7 +231,8 @@ def _to_label_content(
 
     loc_id = location.get("id") or ""
     detail_payload = detail_map.get(loc_id, {})
-    description = (detail_payload.get("description") or location.get("description") or "").strip()
+    description = (detail_payload.get("description")
+                   or location.get("description") or "").strip()
     categories_text = ", ".join(extract_categories(description))
 
     full_path = path_map.get(loc_id, [])
@@ -316,7 +242,7 @@ def _to_label_content(
     title, content = split_name_content(location.get("name") or "")
     return LabelContent(
         title=title,
-        subtitle=content,
+        content=content,
         url=build_ui_url(base_ui, loc_id),
         path_text=path_text,
         categories_text=categories_text,
@@ -330,52 +256,42 @@ def draw_label(
 ) -> None:
     """Render a single label into the supplied canvas."""
 
-    column = _reserve_text_column(canvas_obj, geometry, content.url)
+    column = _render_qr_code(canvas_obj, geometry, content.url)
     _render_label_text(canvas_obj, geometry, content, column)
 
 
-def _reserve_text_column(
+def _render_qr_code(
     canvas_obj: canvas.Canvas,
     geometry: LabelGeometry,
     url: str,
 ) -> _TextColumn:
     """Draw the QR code (if any) and report where text may flow."""
 
-    text_left = geometry.x + LABEL_PADDING
-    text_right = geometry.x + geometry.width - LABEL_PADDING
-    text_width = max(text_right - text_left, 0.0)
-
-    qr_size = max(geometry.height - 2 * LABEL_PADDING, 0.0)
+    qr_size = geometry.height * 0.7
+    qr_bottom = geometry.y + (geometry.height - qr_size) / 2
     if not url or qr_size <= 0.0:
-        return _TextColumn(text_left, text_width, align_left=False)
+        return _TextColumn(geometry.x, geometry.width)
 
     buffer = BytesIO()
-    qr = qrcode.QRCode()
+    qr = qrcode.QRCode(border=0)
     qr.add_data(url)
     qr_img = qr.make_image()
-    qr_img.save(buffer, format="PNG")
+    qr_img.save(buffer, kind="PNG")
     buffer.seek(0)
 
     canvas_obj.drawImage(
         ImageReader(buffer),
-        geometry.x,
-        geometry.y,
+        geometry.x + LABEL_PADDING,
+        qr_bottom,
         width=qr_size,
         height=qr_size,
         preserveAspectRatio=True,
         mask="auto",
     )
 
-    border_pt = qr.border * qr.box_size
-    line_x = geometry.x + qr_size - 2 * border_pt
-    canvas_obj.saveState()
-    canvas_obj.setLineWidth(0.5)
-    canvas_obj.line(line_x, geometry.y + border_pt, line_x, geometry.y + qr_size - border_pt)
-    canvas_obj.restoreState()
-
-    column_left = line_x + border_pt
-    column_width = max(text_right - column_left, 0.0)
-    return _TextColumn(column_left, column_width, align_left=True)
+    column_left = geometry.x + qr_size + 2 * LABEL_PADDING
+    column_width = geometry.x + geometry.width - column_left
+    return _TextColumn(column_left, column_width)
 
 
 def _render_label_text(
@@ -385,102 +301,50 @@ def _render_label_text(
     column: _TextColumn,
 ) -> None:
     """Render the textual payload for the label."""
+    canvas_obj.saveState()
+    canvas_obj.setLineWidth(0.5)
+    title_row_y = geometry.y + geometry.height * 3 / 4
+    content_row_y = geometry.y + geometry.height / 2
+    location_row_y = geometry.y + geometry.height / 4
 
-    text_area_width = (
-        column.width if column.align_left else max(geometry.width - 2 * LABEL_PADDING, 0.0)
-    )
-    center_x = (
-        column.left + text_area_width / 2.0
-        if column.align_left
-        else geometry.x + geometry.width / 2.0
-    )
+    canvas_obj.line(column.left, geometry.y, column.left,
+                    geometry.y + geometry.height)
+    canvas_obj.line(column.left, title_row_y,
+                    column.left + column.width, title_row_y)
+    canvas_obj.line(column.left, content_row_y,
+                    column.left + column.width, content_row_y)
+    canvas_obj.line(column.left, location_row_y,
+                    column.left + column.width, location_row_y)
+    canvas_obj.restoreState()
+
+    center_x = column.left + column.width / 2.0
+
     context = _TextContext(
         canvas=canvas_obj,
         geometry=geometry,
         column=column,
         center_x=center_x,
-        text_area_width=text_area_width,
     )
 
     title = location_display_text(content.title)
-    title_size = shrink_fit(
-        title,
-        text_area_width,
-        max_font=28,
-        min_font=12,
-        font_name="Helvetica-Bold",
-    )
-    canvas_obj.setFont("Helvetica-Bold", title_size)
-    title_y = geometry.y + geometry.height - LABEL_PADDING - title_size
-    if column.align_left:
-        canvas_obj.drawString(column.left, title_y, title)
-    else:
-        canvas_obj.drawCentredString(center_x, title_y, title)
+    canvas_obj.setFont("Helvetica-Bold", TITLE_FONT_SIZE)
+    title_y = title_row_y + TEXT_BOTTOM_PAD
+    canvas_obj.drawString(column.left + LABEL_PADDING, title_y, title)
 
-    subtitle_text = content.subtitle.strip()
-    subtitle_y, subtitle_size = _draw_subtitle(context, title_y, title_size, subtitle_text)
-    detail_lines = [value for value in (content.path_text, content.categories_text) if value]
-    _draw_detail_lines(context, subtitle_y, subtitle_size, detail_lines)
+    if not content.content:
+        return
 
-
-def _draw_subtitle(
-    context: _TextContext,
-    title_y: float,
-    title_size: float,
-    subtitle_text: str,
-) -> Tuple[float, float]:
-    """Draw the optional subtitle block and return the next Y offset."""
-
-    if not subtitle_text:
-        fallback_size = max(title_size - 4, 10)
-        fallback_y = title_y - fallback_size - 6
-        return fallback_y, fallback_size
-
-    subtitle_size = shrink_fit(
-        subtitle_text,
-        context.text_area_width,
-        max_font=max(title_size - 2, 22),
+    content_size = shrink_fit(
+        content.content.strip(),
+        column.width - LABEL_PADDING,
+        max_font=max(TITLE_FONT_SIZE - 2, 22),
         min_font=8,
         font_name="Helvetica-Bold",
     )
-    subtitle_y = title_y - subtitle_size - 6
-    context.canvas.setFont("Helvetica-Bold", subtitle_size)
-    if context.column.align_left:
-        context.canvas.drawString(context.column.left, subtitle_y, subtitle_text)
-    else:
-        context.canvas.drawCentredString(context.center_x, subtitle_y, subtitle_text)
-    return subtitle_y, subtitle_size
-
-
-def _draw_detail_lines(
-    context: _TextContext,
-    start_y: float,
-    base_font_size: float,
-    detail_lines: Sequence[str],
-) -> None:
-    """Render any extra detail lines within the remaining space."""
-
-    if not detail_lines:
-        return
-
-    approx_chars = max(int(context.text_area_width / (0.115 * inch)), 1)
-    current_y = start_y
-    for raw_line in detail_lines:
-        for segment in wrap_text_lines(raw_line, approx_chars):
-            detail_size = shrink_fit(
-                segment,
-                context.text_area_width,
-                max_font=max(base_font_size - 2, 12),
-                min_font=6,
-                font_name="Helvetica-Bold",
-            )
-            current_y -= detail_size + 3
-            current_y = max(current_y, context.geometry.y + LABEL_PADDING)
-            context.canvas.setFont("Helvetica-Bold", detail_size)
-            if context.column.align_left:
-                context.canvas.drawString(context.column.left, current_y, segment)
-            else:
-                context.canvas.drawCentredString(context.center_x, current_y, segment)
+    content_y = content_row_y + TEXT_BOTTOM_PAD
+    context.canvas.setFont("Helvetica-Bold", content_size)
+    context.canvas.drawString(
+        context.column.left + LABEL_PADDING, content_y, content.content.strip())
 
 
 def render_label_pdf(
@@ -519,6 +383,7 @@ def render_label_pdf(
 
     canvas_obj.save()
 
+
 def template(canvas_obj: canvas.Canvas) -> None:
     """Draw the Avery 5163 grid to guide label placement."""
 
@@ -527,8 +392,10 @@ def template(canvas_obj: canvas.Canvas) -> None:
     # sanity check to ensure geometry fills page
     total_w = MARGIN_LEFT + COLS * LABEL_W + (COLS - 1) * H_GAP + MARGIN_RIGHT
     total_h = MARGIN_BOTTOM + ROWS * LABEL_H + (ROWS - 1) * V_GAP + MARGIN_TOP
-    assert abs(total_w - PAGE_W) < 0.01, f"Width mismatch: {total_w} vs {PAGE_W}"
-    assert abs(total_h - PAGE_H) < 0.01, f"Height mismatch: {total_h} vs {PAGE_H}"
+    assert abs(
+        total_w - PAGE_W) < 0.01, f"Width mismatch: {total_w} vs {PAGE_W}"
+    assert abs(
+        total_h - PAGE_H) < 0.01, f"Height mismatch: {total_h} vs {PAGE_H}"
 
     # draw label rectangles from bottom-left
     for r in range(ROWS):
@@ -556,15 +423,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default="box.*",
         help="Case-insensitive regex filter applied to location display names (default: box.*)",
     )
-    parser.add_argument("--username", default=DEFAULT_USERNAME)
-    parser.add_argument("--password", default=DEFAULT_PASSWORD)
-    parser.add_argument("--base", default=DEFAULT_BASE)
+    parser.add_argument(
+        "--base",
+        default=os.getenv("HOMEBOX_API_URL"),
+        help="Homebox base URL (defaults to HOMEBOX_API_URL from the environment/.env).",
+    )
+    parser.add_argument(
+        "--username",
+        default=os.getenv("HOMEBOX_USERNAME"),
+        help="Homebox username (defaults to HOMEBOX_USERNAME from the environment/.env).",
+    )
+    parser.add_argument(
+        "--password",
+        default=os.getenv("HOMEBOX_PASSWORD"),
+        help="Homebox password (defaults to HOMEBOX_PASSWORD from the environment/.env).",
+    )
+
     args = parser.parse_args(argv)
+    api_manager = HomeboxApiManager(
+        base_url=args.base,
+        username=args.username,
+        password=args.password,
+    )
 
-    api_base = f"{args.base.rstrip('/')}/api"
-    token = login(api_base, args.username, args.password)
-
-    labels = collect_label_contents(api_base, args.base, token, args.name_pattern)
+    labels = collect_label_contents(api_manager, args.base, args.name_pattern)
     render_label_pdf(args.output, labels, args.skip)
 
     print(f"Wrote {args.output}")
@@ -572,9 +454,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except requests.HTTPError as http_err:
-        sys.exit(f"HTTP error: {http_err.response.status_code} {http_err.response.text[:2000]}")
-    except requests.RequestException as req_err:  # pragma: no cover - top-level safeguard
-        sys.exit(str(req_err))
+
+    load_dotenv()
+
+    main()
