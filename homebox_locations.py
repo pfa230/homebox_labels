@@ -49,7 +49,7 @@ OFFSET_Y = 0.00 * INCH_PT
 
 LABEL_PADDING = 0.12 * inch
 
-TITLE_FONT_SIZE = 28
+TITLE_FONT_SIZE = 22
 TEXT_BOTTOM_PAD = 0.06 * inch
 
 
@@ -80,16 +80,6 @@ class _TextColumn:
 
     left: float
     width: float
-
-
-@dataclass(frozen=True)
-class _TextContext:
-    """Shared state for rendering text blocks within a label."""
-
-    canvas: canvas.Canvas
-    geometry: LabelGeometry
-    column: _TextColumn
-    center_x: float
 
 
 def _filter_locations_by_name(locations: Sequence[Dict], pattern: Optional[str]) -> List[Dict]:
@@ -267,8 +257,8 @@ def _render_qr_code(
 ) -> _TextColumn:
     """Draw the QR code (if any) and report where text may flow."""
 
-    qr_size = geometry.height * 0.7
-    qr_bottom = geometry.y + (geometry.height - qr_size) / 2
+    qr_size = geometry.height * 0.75 - 2 * LABEL_PADDING
+    qr_bottom = geometry.y + LABEL_PADDING
     if not url or qr_size <= 0.0:
         return _TextColumn(geometry.x, geometry.width)
 
@@ -303,13 +293,14 @@ def _render_label_text(
     """Render the textual payload for the label."""
     canvas_obj.saveState()
     canvas_obj.setLineWidth(0.5)
+
     title_row_y = geometry.y + geometry.height * 3 / 4
     content_row_y = geometry.y + geometry.height / 2
     location_row_y = geometry.y + geometry.height / 4
 
     canvas_obj.line(column.left, geometry.y, column.left,
-                    geometry.y + geometry.height)
-    canvas_obj.line(column.left, title_row_y,
+                    title_row_y)
+    canvas_obj.line(geometry.x, title_row_y,
                     column.left + column.width, title_row_y)
     canvas_obj.line(column.left, content_row_y,
                     column.left + column.width, content_row_y)
@@ -317,19 +308,10 @@ def _render_label_text(
                     column.left + column.width, location_row_y)
     canvas_obj.restoreState()
 
-    center_x = column.left + column.width / 2.0
-
-    context = _TextContext(
-        canvas=canvas_obj,
-        geometry=geometry,
-        column=column,
-        center_x=center_x,
-    )
-
     title = location_display_text(content.title)
     canvas_obj.setFont("Helvetica-Bold", TITLE_FONT_SIZE)
     title_y = title_row_y + TEXT_BOTTOM_PAD
-    canvas_obj.drawString(column.left + LABEL_PADDING, title_y, title)
+    canvas_obj.drawString(geometry.x + LABEL_PADDING, title_y, title)
 
     if not content.content:
         return
@@ -342,9 +324,9 @@ def _render_label_text(
         font_name="Helvetica-Bold",
     )
     content_y = content_row_y + TEXT_BOTTOM_PAD
-    context.canvas.setFont("Helvetica-Bold", content_size)
-    context.canvas.drawString(
-        context.column.left + LABEL_PADDING, content_y, content.content.strip())
+    canvas_obj.setFont("Helvetica-Bold", content_size)
+    canvas_obj.drawString(
+        column.left + LABEL_PADDING, content_y, content.content.strip())
 
 
 def render_label_pdf(
