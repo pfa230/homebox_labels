@@ -49,6 +49,7 @@ LABEL_PADDING = 0.12 * inch
 
 TEXT_BOTTOM_PAD = 0.06 * inch
 
+
 @dataclass(frozen=True)
 class LabelContent:
     """Textual payload to render into a label."""
@@ -58,24 +59,6 @@ class LabelContent:
     url: str
     path_text: str = ""
     categories_text: str = ""
-
-
-@dataclass(frozen=True)
-class LabelGeometry:
-    """Rectangle describing where the label should be plotted."""
-
-    x: float
-    y: float
-    width: float
-    height: float
-
-
-@dataclass(frozen=True)
-class _TextColumn:
-    """Render-time information on the column reserved for text."""
-
-    left: float
-    width: float
 
 
 def _filter_locations_by_name(locations: Sequence[Dict], pattern: Optional[str]) -> List[Dict]:
@@ -255,27 +238,23 @@ def _to_label_content(
 
 def draw_label(
     canvas_obj: canvas.Canvas,
-    geometry: LabelGeometry,
     content: LabelContent,
     fonts: FontConfig,
 ) -> None:
     """Render a single label into the supplied canvas."""
 
-    column = _render_qr_code(canvas_obj, geometry, content.url)
-    _render_label_text(canvas_obj, geometry, content, column, fonts)
+    _render_qr_code(canvas_obj, content.url)
+    _render_label_text(canvas_obj, content, fonts)
 
 
 def _render_qr_code(
     canvas_obj: canvas.Canvas,
-    geometry: LabelGeometry,
     url: str,
-) -> _TextColumn:
+):
     """Draw the QR code (if any) and report where text may flow."""
 
-    qr_size = geometry.height * 0.75 - 2 * LABEL_PADDING
-    qr_bottom = geometry.y + LABEL_PADDING
-    if not url or qr_size <= 0.0:
-        return _TextColumn(geometry.x, geometry.width)
+    qr_size = LABEL_H * 0.75 - 2 * LABEL_PADDING
+    qr_bottom = LABEL_PADDING
 
     buffer = BytesIO()
     qr = qrcode.QRCode(border=0)
@@ -286,7 +265,7 @@ def _render_qr_code(
 
     canvas_obj.drawImage(
         ImageReader(buffer),
-        geometry.x + LABEL_PADDING,
+        LABEL_PADDING,
         qr_bottom,
         width=qr_size,
         height=qr_size,
@@ -294,52 +273,41 @@ def _render_qr_code(
         mask="auto",
     )
 
-    column_left = geometry.x + qr_size + 2 * LABEL_PADDING
-    column_width = geometry.x + geometry.width - column_left
-    return _TextColumn(column_left, column_width)
-
 
 def _render_label_text(
     canvas_obj: canvas.Canvas,
-    geometry: LabelGeometry,
     content: LabelContent,
-    column: _TextColumn,
     fonts: FontConfig,
 ) -> None:
     """Render the textual payload for the label."""
-
+    left = LABEL_H * 0.75 - 2 * LABEL_PADDING
     canvas_obj.saveState()
     canvas_obj.setLineWidth(0.5)
 
-    title_row_y = geometry.y + geometry.height * 3 / 4
-    content_row_y = geometry.y + geometry.height / 2
-    info_row_y = geometry.y + geometry.height / 4
+    title_row_y = LABEL_H * 3 / 4
+    content_row_y = LABEL_H / 2
+    info_row_y = LABEL_H / 4
 
-    canvas_obj.line(column.left, geometry.y, column.left, title_row_y)
-    canvas_obj.line(geometry.x, title_row_y, column.left + column.width, title_row_y)
-    canvas_obj.line(column.left, content_row_y, column.left + column.width, content_row_y)
-    canvas_obj.line(column.left, info_row_y, column.left + column.width, info_row_y)
+    canvas_obj.line(left, 0, left, title_row_y)
+    canvas_obj.line(0, title_row_y, LABEL_W, title_row_y)
+    canvas_obj.line(left, content_row_y, LABEL_W, content_row_y)
+    canvas_obj.line(left, info_row_y, LABEL_W, info_row_y)
     canvas_obj.restoreState()
 
-    left_column_width = max(column.left - geometry.x, 0.0)
-    label_x = geometry.x + left_column_width / 2.0 if left_column_width else geometry.x
+    label_x = left / 2
 
     # Render section headings in the left column if available.
-    if left_column_width > LABEL_PADDING:
-        canvas_obj.setFont(fonts.label.font_name, fonts.label.size)
-        heading_positions = [
-            ("Title", (geometry.y + geometry.height + title_row_y) / 2.0),
-            ("Content", (title_row_y + content_row_y) / 2.0),
-            ("Info", (content_row_y + geometry.y) / 2.0),
-        ]
-        for text, y in heading_positions:
-            canvas_obj.drawCentredString(label_x, y, text)
+    canvas_obj.setFont(fonts.label.font_name, fonts.label.size)
+    heading_positions = [
+        ("Title", (LABEL_H + title_row_y) / 2.0),
+        ("Content", (title_row_y + content_row_y) / 2.0),
+        ("Info", (content_row_y) / 2.0),
+    ]
+    for text, y in heading_positions:
+        canvas_obj.drawCentredString(label_x, y, text)
 
-    text_start_x = max(column.left + LABEL_PADDING, geometry.x + LABEL_PADDING)
-    text_max_width = max(
-        geometry.x + geometry.width - LABEL_PADDING - text_start_x,
-        0.0,
-    )
+    text_start_x = max(left + LABEL_PADDING, LABEL_PADDING)
+    text_max_width = max(LABEL_W - LABEL_PADDING - text_start_x, 0.0)
 
     title = location_display_text(content.title)
     title_max = fonts.title.size
@@ -397,7 +365,7 @@ def _render_label_text(
         info_y = info_row_y - TEXT_BOTTOM_PAD - fonts.label.size
         canvas_obj.setFont(fonts.label.font_name, fonts.label.size)
         for line in info_lines:
-            if info_y < geometry.y + fonts.label.size:
+            if info_y < fonts.label.size:
                 break
             canvas_obj.drawString(text_start_x, info_y, line)
             info_y -= fonts.label.size + (TEXT_BOTTOM_PAD / 2.0)
@@ -428,13 +396,12 @@ def render_label_pdf(
                     continue
                 if index >= total:
                     continue
-                geometry = LabelGeometry(
-                    x=x0 + col * (LABEL_W + H_GAP),
-                    y=y0 - row * LABEL_H,
-                    width=LABEL_W,
-                    height=LABEL_H,
-                )
-                draw_label(canvas_obj, geometry, labels[index], fonts)
+                canvas_obj.saveState()
+                canvas_obj.translate(
+                    x0 + col * (LABEL_W + H_GAP), y0 - row * LABEL_H)
+
+                draw_label(canvas_obj, labels[index], fonts)
+                canvas_obj.restoreState()
                 index += 1
         canvas_obj.showPage()
 
@@ -553,9 +520,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         fonts = build_font_config(
             family=args.font_family,
-            title_spec=FontSpec(weight=args.font_title_weight, size=args.font_title_size),
-            content_spec=FontSpec(weight=args.font_content_weight, size=args.font_content_size),
-            label_spec=FontSpec(weight=args.font_label_weight, size=args.font_label_size),
+            title_spec=FontSpec(weight=args.font_title_weight,
+                                size=args.font_title_size),
+            content_spec=FontSpec(
+                weight=args.font_content_weight, size=args.font_content_size),
+            label_spec=FontSpec(weight=args.font_label_weight,
+                                size=args.font_label_size),
             url=args.font_url,
         )
     except (ValueError, RuntimeError) as exc:
