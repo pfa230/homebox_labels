@@ -5,13 +5,10 @@ import argparse
 import os
 import re
 import sys
-import textwrap
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Dict, List, Optional, Sequence, Tuple
 
-
-from homebox_client.exceptions import ApiException
 from dotenv import load_dotenv
 
 import qrcode
@@ -22,6 +19,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 from homebox_api import HomeboxApiManager
+from fonts import FontConfig, FontSpec, build_font_config
 
 # --- Template geometry (in inches) ---
 PAGE_W, PAGE_H = letter  # 8.5 x 11 in in points
@@ -49,9 +47,7 @@ OFFSET_Y = 0.00 * INCH_PT
 
 LABEL_PADDING = 0.12 * inch
 
-TITLE_FONT_SIZE = 22
 TEXT_BOTTOM_PAD = 0.06 * inch
-
 
 @dataclass(frozen=True)
 class LabelContent:
@@ -153,18 +149,34 @@ def extract_categories(description: str) -> List[str]:
     return []
 
 
-def wrap_text_lines(text: str, max_chars: int) -> List[str]:
-    """Wrap the supplied text into roughly equal-length segments."""
+def wrap_text_to_width(
+    text: str,
+    font_name: str,
+    font_size: float,
+    max_width_pt: float,
+) -> List[str]:
+    """Wrap text to fit within the specified width using font metrics."""
 
-    if not text:
+    if not text or max_width_pt <= 0.0:
         return []
-    max_chars = max(1, max_chars)
-    return textwrap.wrap(
-        text,
-        width=max_chars,
-        break_long_words=False,
-        drop_whitespace=True,
-    )
+
+    words = text.split()
+    if not words:
+        return []
+
+    lines: List[str] = []
+    current: List[str] = []
+    for word in words:
+        tentative = " ".join(current + [word]) if current else word
+        if stringWidth(tentative, font_name, font_size) <= max_width_pt or not current:
+            current.append(word)
+            continue
+        lines.append(" ".join(current))
+        current = [word]
+
+    if current:
+        lines.append(" ".join(current))
+    return lines
 
 
 def shrink_fit(
@@ -173,12 +185,14 @@ def shrink_fit(
     max_font: float,
     min_font: float,
     font_name: str,
+    step: float = 1.0,
 ) -> float:
     """Find the largest font size that fits within the given width."""
 
     size = max_font
+    step = max(step, 0.25)
     while size >= min_font and stringWidth(text, font_name, size) > max_width_pt:
-        size -= 1
+        size -= step
     return max(size, min_font)
 
 
@@ -243,11 +257,12 @@ def draw_label(
     canvas_obj: canvas.Canvas,
     geometry: LabelGeometry,
     content: LabelContent,
+    fonts: FontConfig,
 ) -> None:
     """Render a single label into the supplied canvas."""
 
     column = _render_qr_code(canvas_obj, geometry, content.url)
-    _render_label_text(canvas_obj, geometry, content, column)
+    _render_label_text(canvas_obj, geometry, content, column, fonts)
 
 
 def _render_qr_code(
@@ -289,50 +304,110 @@ def _render_label_text(
     geometry: LabelGeometry,
     content: LabelContent,
     column: _TextColumn,
+    fonts: FontConfig,
 ) -> None:
     """Render the textual payload for the label."""
+
     canvas_obj.saveState()
     canvas_obj.setLineWidth(0.5)
 
     title_row_y = geometry.y + geometry.height * 3 / 4
     content_row_y = geometry.y + geometry.height / 2
-    location_row_y = geometry.y + geometry.height / 4
+    info_row_y = geometry.y + geometry.height / 4
 
-    canvas_obj.line(column.left, geometry.y, column.left,
-                    title_row_y)
-    canvas_obj.line(geometry.x, title_row_y,
-                    column.left + column.width, title_row_y)
-    canvas_obj.line(column.left, content_row_y,
-                    column.left + column.width, content_row_y)
-    canvas_obj.line(column.left, location_row_y,
-                    column.left + column.width, location_row_y)
+    canvas_obj.line(column.left, geometry.y, column.left, title_row_y)
+    canvas_obj.line(geometry.x, title_row_y, column.left + column.width, title_row_y)
+    canvas_obj.line(column.left, content_row_y, column.left + column.width, content_row_y)
+    canvas_obj.line(column.left, info_row_y, column.left + column.width, info_row_y)
     canvas_obj.restoreState()
 
-    title = location_display_text(content.title)
-    canvas_obj.setFont("Helvetica-Bold", TITLE_FONT_SIZE)
-    title_y = title_row_y + TEXT_BOTTOM_PAD
-    canvas_obj.drawString(geometry.x + LABEL_PADDING, title_y, title)
+    left_column_width = max(column.left - geometry.x, 0.0)
+    label_x = geometry.x + left_column_width / 2.0 if left_column_width else geometry.x
 
-    if not content.content:
-        return
+    # Render section headings in the left column if available.
+    if left_column_width > LABEL_PADDING:
+        canvas_obj.setFont(fonts.label.font_name, fonts.label.size)
+        heading_positions = [
+            ("Title", (geometry.y + geometry.height + title_row_y) / 2.0),
+            ("Content", (title_row_y + content_row_y) / 2.0),
+            ("Info", (content_row_y + geometry.y) / 2.0),
+        ]
+        for text, y in heading_positions:
+            canvas_obj.drawCentredString(label_x, y, text)
 
-    content_size = shrink_fit(
-        content.content.strip(),
-        column.width - LABEL_PADDING,
-        max_font=max(TITLE_FONT_SIZE - 2, 22),
-        min_font=8,
-        font_name="Helvetica-Bold",
+    text_start_x = max(column.left + LABEL_PADDING, geometry.x + LABEL_PADDING)
+    text_max_width = max(
+        geometry.x + geometry.width - LABEL_PADDING - text_start_x,
+        0.0,
     )
-    content_y = content_row_y + TEXT_BOTTOM_PAD
-    canvas_obj.setFont("Helvetica-Bold", content_size)
-    canvas_obj.drawString(
-        column.left + LABEL_PADDING, content_y, content.content.strip())
+
+    title = location_display_text(content.title)
+    title_max = fonts.title.size
+    title_min = max(title_max * 0.5, 8.0)
+    title_size = shrink_fit(
+        title,
+        text_max_width,
+        max_font=title_max,
+        min_font=title_min,
+        font_name=fonts.title.font_name,
+        step=0.5,
+    )
+    title_y = title_row_y + TEXT_BOTTOM_PAD
+    canvas_obj.setFont(fonts.title.font_name, title_size)
+    canvas_obj.drawString(text_start_x, title_y, title)
+
+    # Subtitle / content row.
+    body_text = content.content.strip()
+    if body_text:
+        body_max = fonts.content.size
+        body_min = max(body_max * 0.5, 6.0)
+        body_size = shrink_fit(
+            body_text,
+            text_max_width,
+            max_font=body_max,
+            min_font=body_min,
+            font_name=fonts.content.font_name,
+            step=0.5,
+        )
+        body_y = content_row_y + TEXT_BOTTOM_PAD
+        canvas_obj.setFont(fonts.content.font_name, body_size)
+        canvas_obj.drawString(text_start_x, body_y, body_text)
+
+    # Detail lines (path, categories, URL) using the label font.
+    info_lines: List[str] = []
+
+    def append_info(prefix: str, value: str) -> None:
+        if not value:
+            return
+        text = f"{prefix}{value.strip()}"
+        info_lines.extend(
+            wrap_text_to_width(
+                text=text,
+                font_name=fonts.label.font_name,
+                font_size=fonts.label.size,
+                max_width_pt=text_max_width,
+            )
+        )
+
+    append_info("Path: ", content.path_text)
+    append_info("Tags: ", content.categories_text)
+    append_info("URL: ", content.url)
+
+    if info_lines:
+        info_y = info_row_y - TEXT_BOTTOM_PAD - fonts.label.size
+        canvas_obj.setFont(fonts.label.font_name, fonts.label.size)
+        for line in info_lines:
+            if info_y < geometry.y + fonts.label.size:
+                break
+            canvas_obj.drawString(text_start_x, info_y, line)
+            info_y -= fonts.label.size + (TEXT_BOTTOM_PAD / 2.0)
 
 
 def render_label_pdf(
     output_path: str,
     labels: Sequence[LabelContent],
     skip: int,
+    fonts: FontConfig,
 ) -> None:
     """Render the labels into a PDF using the Avery 5163 layout."""
 
@@ -359,7 +434,7 @@ def render_label_pdf(
                     width=LABEL_W,
                     height=LABEL_H,
                 )
-                draw_label(canvas_obj, geometry, labels[index])
+                draw_label(canvas_obj, geometry, labels[index], fonts)
                 index += 1
         canvas_obj.showPage()
 
@@ -420,8 +495,72 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=os.getenv("HOMEBOX_PASSWORD"),
         help="Homebox password (defaults to HOMEBOX_PASSWORD from the environment/.env).",
     )
-
+    parser.add_argument(
+        "--font-family",
+        default="Inter",
+        help="Variable font family to download and use (default: Inter).",
+    )
+    parser.add_argument(
+        "--font-url",
+        help="Override download URL for the variable font file.",
+    )
+    parser.add_argument(
+        "--font-title-weight",
+        type=float,
+        default=700.0,
+        help="Font weight for the title text (default: 700).",
+    )
+    parser.add_argument(
+        "--font-title-size",
+        type=float,
+        default=22.0,
+        help="Font size for the title text in points (default: 22).",
+    )
+    parser.add_argument(
+        "--font-content-weight",
+        type=float,
+        default=600.0,
+        help="Font weight for the content/subtitle text (default: 600).",
+    )
+    parser.add_argument(
+        "--font-content-size",
+        type=float,
+        default=20.0,
+        help="Font size for the content/subtitle text in points (default: 20).",
+    )
+    parser.add_argument(
+        "--font-label-weight",
+        type=float,
+        default=500.0,
+        help="Font weight for supplemental label text (default: 500).",
+    )
+    parser.add_argument(
+        "--font-label-size",
+        type=float,
+        default=12.0,
+        help="Font size for supplemental label text in points (default: 12).",
+    )
     args = parser.parse_args(argv)
+
+    for value, flag in [
+        (args.font_title_size, "--font-title-size"),
+        (args.font_content_size, "--font-content-size"),
+        (args.font_label_size, "--font-label-size"),
+    ]:
+        if value <= 0:
+            raise SystemExit(f"{flag} must be greater than zero.")
+
+    try:
+        fonts = build_font_config(
+            family=args.font_family,
+            title_spec=FontSpec(weight=args.font_title_weight, size=args.font_title_size),
+            content_spec=FontSpec(weight=args.font_content_weight, size=args.font_content_size),
+            label_spec=FontSpec(weight=args.font_label_weight, size=args.font_label_size),
+            url=args.font_url,
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise SystemExit(str(exc)) from exc
+
     api_manager = HomeboxApiManager(
         base_url=args.base,
         username=args.username,
@@ -429,7 +568,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     labels = collect_label_contents(api_manager, args.base, args.name_pattern)
-    render_label_pdf(args.output, labels, args.skip)
+    render_label_pdf(args.output, labels, args.skip, fonts)
 
     print(f"Wrote {args.output}")
     return 0
