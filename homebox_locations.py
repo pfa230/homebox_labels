@@ -106,7 +106,11 @@ def collect_label_contents(
     tree = api_manager.get_location_tree()
     path_map = build_location_paths(tree)
 
-    loc_ids = {loc.get("id") for loc in filtered_locations if loc.get("id")}
+    loc_ids = [
+        loc_id
+        for loc in filtered_locations
+        if isinstance(loc_id := loc.get("id"), str)
+    ]
     detail_map = api_manager.get_location_details(loc_ids)
 
     base_ui_clean = base_ui.rstrip("/")
@@ -149,8 +153,7 @@ def render_pdf(
     template_module,
     labels: Sequence[LabelContent],
     skip: int,
-    *,
-    draw_outline: bool = True,
+    draw_outline: bool
 ) -> None:
     total = len(labels)
     skip_remaining = max(0, skip)
@@ -164,7 +167,8 @@ def render_pdf(
             width = geom.width
             height = geom.height
             if width <= 0 or height <= 0:
-                raise SystemExit("Template produced non-positive geometry dimensions.")
+                raise SystemExit(
+                    "Template produced non-positive geometry dimensions.")
 
             canvas_obj.setPageSize((width, height))
 
@@ -214,7 +218,8 @@ def render_pdf(
 
             canvas_obj.saveState()
             canvas_obj.translate(label_geom.left, label_geom.bottom)
-            template_module.draw_label(canvas_obj, labels[index], geometry=label_geom)
+            template_module.draw_label(
+                canvas_obj, labels[index], geometry=label_geom)
             canvas_obj.restoreState()
             index += 1
 
@@ -231,15 +236,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Homebox locations -> Avery 2x4 PDF (5163/8163)"
     )
-    parser.add_argument("-o", "--output", default="homebox_locations_5163.pdf")
+    parser.add_argument("-o", "--output")
     parser.add_argument(
-        "--skip",
+        "-s", "--skip",
         type=int,
         default=0,
         help="Number of labels to skip at start of first sheet",
     )
     parser.add_argument(
-        "--name-pattern",
+        "-n", "--name-pattern",
         default="box.*",
         help="Case-insensitive regex filter applied to location display names (default: box.*)",
     )
@@ -259,10 +264,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Homebox password (defaults to HOMEBOX_PASSWORD from the environment/.env).",
     )
     parser.add_argument(
-        "--template",
+        "-t", "--template",
         default="5163",
         help="Label template identifier (default: 5163).",
     )
+    parser.add_argument(
+        "-d", "--draw-outline",
+        action="store_true",
+        help="Draw outline around every label",
+    )
+
     args = parser.parse_args(argv)
 
     template_module = get_template(args.template)
@@ -273,10 +284,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         password=args.password,
     )
 
+    output = args.output or f"locations_{args.template}.pdf"
     labels = collect_label_contents(api_manager, args.base, args.name_pattern)
-    render_pdf(args.output, template_module, labels, args.skip)
+    render_pdf(output, template_module, labels, args.skip, args.draw_outline)
 
-    print(f"Wrote {args.output}")
+    print(f"Wrote {output}")
     return 0
 
 

@@ -37,8 +37,7 @@ OFFSET_X = 0.00 * inch
 OFFSET_Y = 0.00 * inch
 
 LABEL_PADDING = 0.1 * inch
-TEXT_BOTTOM_PAD = 0.06 * inch
-COL1_TITLE_MAX_SIZE = 22
+COL_1_BOTTOM_PAD = 0.15 * inch
 
 QR_SIZE = COL_1_W - 2 * LABEL_PADDING
 
@@ -89,9 +88,9 @@ def _render_col_1(canvas_obj: canvas.Canvas, content: LabelContent):
     )
     center_x = COL_1_W / 2.0
     canvas_obj.setFont(_FONTS.title.font_name, title_size)
-    canvas_obj.drawCentredString(center_x, TEXT_BOTTOM_PAD, title)
+    canvas_obj.drawCentredString(center_x, COL_1_BOTTOM_PAD, title)
 
-    title_top = TEXT_BOTTOM_PAD + title_size
+    title_top = COL_1_BOTTOM_PAD + title_size
     qr_size = COL_1_W - 2 * LABEL_PADDING
 
     buffer = BytesIO()
@@ -143,7 +142,7 @@ def _render_col_2(
             min_font=content_min,
             font_name=_FONTS.content.font_name,
         )
-        body_y = content_row_y + TEXT_BOTTOM_PAD
+        body_y = content_row_y + LABEL_PADDING
         canvas_obj.setFont(_FONTS.content.font_name, content_size)
         canvas_obj.drawString(text_start_x, body_y, content_text)
 
@@ -167,13 +166,13 @@ def _render_col_2(
     append_info("Notes: ", "")
 
     if info_lines:
-        info_y = info_row_y - TEXT_BOTTOM_PAD - _FONTS.label.size
+        info_y = info_row_y - LABEL_PADDING - _FONTS.label.size
         canvas_obj.setFont(_FONTS.label.font_name, _FONTS.label.size)
         for line in info_lines:
             if info_y < _FONTS.label.size:
                 break
             canvas_obj.drawString(text_start_x, info_y, line)
-            info_y -= _FONTS.label.size + (TEXT_BOTTOM_PAD / 2.0)
+            info_y -= _FONTS.label.size + (LABEL_PADDING / 2.0)
 
 
 def draw_label(
