@@ -8,9 +8,8 @@ from io import BytesIO
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
-
-import fitz
 
 from homebox_api import HomeboxApiManager
 from label_types import LabelContent
@@ -194,53 +193,20 @@ def render_png(
     labels: Sequence[LabelContent],
 ) -> str:
     output_path = output_path or "locations"
-    total = len(labels)
-    index = 0
 
     template.reset()
 
-    file_count = 0
-    dpi = getattr(template, "raster_dpi", 300)
-    while index < total:
-        if index >= total:
-            break
-
-        label = labels[index]
-        geometry = template.next_label_geometry(label)
-
-        if geometry.width <= 0 or geometry.height <= 0:
-            raise SystemExit(
-                "Template produced non-positive geometry dimensions."
-            )
-
-        buffer = BytesIO()
-        canvas_obj = canvas.Canvas(
-            buffer,
-            pagesize=(geometry.width, geometry.height),
-        )
-
-        canvas_obj.saveState()
-        canvas_obj.translate(geometry.left, geometry.bottom)
-        template.draw_label(canvas_obj, label)
-        canvas_obj.restoreState()
-        canvas_obj.showPage()
-        canvas_obj.save()
-
-        png_name = f"{output_path}_{file_count + 1:02d}.png"
-        pdf_bytes = buffer.getvalue()
-        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            page = doc.load_page(0)
-            pix = page.get_pixmap(dpi=dpi)
-            pix.save(png_name)
-
-        file_count += 1
-        index += 1
-        template.consume_page_break()
-
-    if file_count == 0:
+    if len(labels) == 0:
         return "No labels matched the provided filters; no output generated."
 
-    return f"Wrote {file_count} PNG files with prefix '{output_path}_'."
+    for i, label in enumerate(labels):
+        png_bytes = template.render_label(label)
+
+        png_name = f"{output_path}_{(i + 1):02d}.png"
+        with open(png_name, "wb") as handle:
+            handle.write(png_bytes)
+
+    return f"Wrote {len(labels)} PNG files with prefix '{output_path}_'."
 
 
 def render_pdf(
@@ -251,35 +217,38 @@ def render_pdf(
     draw_outline: bool,
 ) -> str:
     output_path = output_path or "locations.pdf"
-    total = len(labels)
-    skip_remaining = max(0, skip)
-    index = 0
 
     template.reset()
 
-    page_size = template.page_size
-    canvas_obj = canvas.Canvas(output_path, pagesize=page_size)
+    canvas_obj = canvas.Canvas(output_path, pagesize=template.page_size)
 
-    while index < total or skip_remaining > 0:
-        if skip_remaining > 0:
-            template.next_label_geometry(None)
-            skip_remaining -= 1
-            if template.consume_page_break() and (
-                index < total or skip_remaining > 0
-            ):
+    for _ in range(skip):
+        template.next_label_geometry()
+
+    first_page = False
+    for label in labels:
+        geometry = template.next_label_geometry()
+        if geometry.on_new_page:
+            if first_page:
+                first_page = False
+            else:
                 canvas_obj.showPage()
-            continue
-
-        if index >= total:
-            break
-
-        label = labels[index]
-        geometry = template.next_label_geometry(label)
 
         if geometry.width <= 0 or geometry.height <= 0:
-            raise SystemExit(
+            raise SystemError(
                 "Template produced non-positive geometry dimensions."
             )
+
+        png_bytes = template.render_label(label)
+        image_reader = ImageReader(BytesIO(png_bytes))
+        canvas_obj.drawImage(
+            image_reader,
+            geometry.left,
+            geometry.bottom,
+            width=geometry.width,
+            height=geometry.height,
+            mask="auto",
+        )
 
         if draw_outline:
             canvas_obj.saveState()
@@ -292,18 +261,7 @@ def render_pdf(
             )
             canvas_obj.restoreState()
 
-        canvas_obj.saveState()
-        canvas_obj.translate(geometry.left, geometry.bottom)
-        template.draw_label(canvas_obj, label)
-        canvas_obj.restoreState()
-
-        index += 1
-
-        if template.consume_page_break() and (
-            index < total or skip_remaining > 0
-        ):
-            canvas_obj.showPage()
-
+    canvas_obj.showPage()
     canvas_obj.save()
     return f"Wrote {output_path}"
 

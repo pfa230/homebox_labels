@@ -21,6 +21,8 @@ class LabelGeometry:
     right: float
     top: float
 
+    on_new_page: bool
+
     @property
     def width(self) -> float:
         return max(self.right - self.left, 0.0)

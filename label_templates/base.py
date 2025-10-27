@@ -5,8 +5,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
-from reportlab.pdfgen.canvas import Canvas
-
 from label_types import LabelContent, LabelGeometry
 
 
@@ -33,23 +31,13 @@ class LabelTemplate(ABC):
         """Clear any pagination state before a new rendering run."""
 
     @abstractmethod
-    def next_label_geometry(self, label: LabelContent | None) -> LabelGeometry:
+    def next_label_geometry(self) -> LabelGeometry:
         """Return the geometry for the next label slot.
-
-        Implementations may inspect ``label`` to adjust layout. The
-        ``label`` argument may be ``None`` when the caller wants to advance
-        pagination state without rendering content (e.g., to skip labels).
         """
 
     @abstractmethod
-    def draw_label(
+    def render_label(
         self,
-        canvas_obj: Canvas,
         content: LabelContent,
-    ) -> None:
-        """Paint ``content`` into ``geometry`` using the provided canvas."""
-
-    def consume_page_break(self) -> bool:
-        """Return True when the caller should advance to a new page."""
-
-        return False
+    ) -> bytes:
+        """Return PNG bytes for ``content`` rendered in the next slot."""

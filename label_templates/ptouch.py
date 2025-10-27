@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from io import BytesIO
 
+import fitz
 import qrcode
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
@@ -32,136 +33,54 @@ _FONTS = build_font_config(
 )
 
 
-def _compute_width(label: LabelContent) -> float:
-    qr_size = LABEL_HEIGHT
-    text_lines = [
-        label.title.strip() or "",
-        label.content.strip() or "",
-        label.categories_text.strip() or "",
-    ]
-
-    font_cycle = [
-        (_FONTS.title.font_name, _FONTS.title.size),
-        (_FONTS.content.font_name, _FONTS.content.size),
-        (_FONTS.label.font_name, _FONTS.label.size),
-    ]
-
-    text_widths: list[float] = []
-    for idx, line in enumerate(text_lines):
-        if not line:
-            text_widths.append(0.0)
-            continue
-        font_name, font_size = font_cycle[min(idx, len(font_cycle) - 1)]
-        text_widths.append(stringWidth(line, font_name, font_size))
-
-    desired_text_width = max(text_widths + [0])
-    required = LABEL_MARGIN_LEFT + qr_size + QR_TEXT_GAP + \
-        desired_text_width + LABEL_MARGIN_RIGHT
-    return min(max(required, MIN_WIDTH), MAX_WIDTH)
-
-
-def _wrap_content_lines(
-    text: str,
-    max_width: float,
-    max_height: float,
-) -> tuple[list[str], float]:
-    """Return up to two lines that satisfy width and height limits."""
-
-    stripped = text.strip()
-    if not stripped:
-        return [], _FONTS.content.size
-
-    words = stripped.split()
-    font_name = _FONTS.content.font_name
-    max_font = _FONTS.content.size
-    min_font = max(max_font * 0.5, 6.0)
-    step = 0.5
-    size = max_font
-
-    while size >= min_font:
-        for split_idx in range(1, len(words) + 1):
-            line_one = " ".join(words[:split_idx]).strip()
-            remaining = words[split_idx:]
-
-            if line_one and stringWidth(line_one, font_name, size) > max_width:
-                break
-
-            lines: list[str] = [line_one] if line_one else []
-
-            if remaining:
-                line_two = " ".join(remaining)
-                if stringWidth(line_two, font_name, size) > max_width:
-                    continue
-                lines.append(line_two)
-
-            total_height = (
-                len(lines) * size
-                + max(0, len(lines) - 1) * TEXT_GAP
-            )
-            if lines and total_height <= max_height:
-                return lines, size
-
-        size -= step
-
-    fallback_line = " ".join(words)
-    fallback_size = shrink_fit(
-        fallback_line,
-        max_width,
-        max_font=max_font,
-        min_font=min_font,
-        font_name=font_name,
-    )
-    fallback_size = min(fallback_size, max_height)
-    return ([fallback_line], fallback_size)
-
-
 class Template(LabelTemplate):
     """Stateful template for Brother P-Touch continuous tape."""
 
     def __init__(self) -> None:
         super().__init__()
 
-    def reset(self) -> None:  # type: ignore[override]
-        self._page_break_pending = False
-
     @property
     def raster_dpi(self) -> int:  # type: ignore[override]
         return 180
 
-    def next_label_geometry(
-        self,
-        label: LabelContent | None,
-    ) -> LabelGeometry:  # type: ignore[override]
-        if not label:
-            raise SystemError("Missing label")
+    def reset(self) -> None:  # type: ignore[override]
+        pass
 
-        width = _compute_width(label)
-        self._page_break_pending = True
-        return LabelGeometry(0.0, 0.0, width, LABEL_HEIGHT)
+    def next_label_geometry(self) -> LabelGeometry:
+        raise SystemError("Not supported")
 
     def consume_page_break(self) -> bool:  # type: ignore[override]
         pending = self._page_break_pending
         self._page_break_pending = False
         return pending
 
-    def draw_label(
+    def render_label(
         self,
-        canvas_obj: canvas.Canvas,
         content: LabelContent,
-    ) -> None:  # type: ignore[override]
-        qr_size = LABEL_HEIGHT
-        text_area_width = _compute_width(
-            content) - qr_size - QR_TEXT_GAP - LABEL_MARGIN_RIGHT
+    ) -> bytes:  # type: ignore[override]
+        width = self._compute_width(content)
 
         buffer = BytesIO()
+        canvas_obj = canvas.Canvas(buffer, pagesize=(width, LABEL_HEIGHT))
+
+        qr_size = LABEL_HEIGHT
+        text_area_width = (
+            width
+            - qr_size
+            - QR_TEXT_GAP
+            - LABEL_MARGIN_LEFT
+            - LABEL_MARGIN_RIGHT
+        )
+
+        qr_buffer = BytesIO()
         qr = qrcode.QRCode(border=0)
         qr.add_data(content.url)
         qr_img = qr.make_image()
-        qr_img.save(buffer, kind="PNG")
-        buffer.seek(0)
+        qr_img.save(qr_buffer, kind="PNG")
+        qr_buffer.seek(0)
 
         canvas_obj.drawImage(
-            ImageReader(buffer),
+            ImageReader(qr_buffer),
             LABEL_MARGIN_LEFT,
             0,
             width=qr_size,
@@ -187,7 +106,7 @@ class Template(LabelTemplate):
         if body_text:
             available_height = title_baseline - TEXT_GAP
             if available_height > 0:
-                body_lines, body_size = _wrap_content_lines(
+                body_lines, body_size = self._wrap_content_lines(
                     body_text,
                     text_area_width,
                     available_height,
@@ -205,3 +124,94 @@ class Template(LabelTemplate):
                         second_baseline,
                         body_lines[1],
                     )
+
+        canvas_obj.showPage()
+        canvas_obj.save()
+
+        pdf_bytes = buffer.getvalue()
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            page = doc.load_page(0)
+            pix = page.get_pixmap(dpi=self.raster_dpi)
+            return pix.tobytes("png")
+
+    def _compute_width(self, label: LabelContent) -> float:
+        qr_size = LABEL_HEIGHT
+        text_lines = [
+            label.title.strip() or "",
+            label.content.strip() or "",
+            label.categories_text.strip() or "",
+        ]
+
+        font_cycle = [
+            (_FONTS.title.font_name, _FONTS.title.size),
+            (_FONTS.content.font_name, _FONTS.content.size),
+            (_FONTS.label.font_name, _FONTS.label.size),
+        ]
+
+        text_widths: list[float] = []
+        for idx, line in enumerate(text_lines):
+            if not line:
+                text_widths.append(0.0)
+                continue
+            font_name, font_size = font_cycle[min(idx, len(font_cycle) - 1)]
+            text_widths.append(stringWidth(line, font_name, font_size))
+
+        desired_text_width = max(text_widths + [0])
+        required = LABEL_MARGIN_LEFT + qr_size + QR_TEXT_GAP + \
+            desired_text_width + LABEL_MARGIN_RIGHT
+        return min(max(required, MIN_WIDTH), MAX_WIDTH)
+
+    def _wrap_content_lines(
+        self,
+        text: str,
+        max_width: float,
+        max_height: float,
+    ) -> tuple[list[str], float]:
+        """Return up to two lines that satisfy width and height limits."""
+
+        stripped = text.strip()
+        if not stripped:
+            return [], _FONTS.content.size
+
+        words = stripped.split()
+        font_name = _FONTS.content.font_name
+        max_font = _FONTS.content.size
+        min_font = max(max_font * 0.5, 6.0)
+        step = 0.5
+        size = max_font
+
+        while size >= min_font:
+            for split_idx in range(1, len(words) + 1):
+                line_one = " ".join(words[:split_idx]).strip()
+                remaining = words[split_idx:]
+
+                if line_one and stringWidth(line_one, font_name, size) > max_width:
+                    break
+
+                lines: list[str] = [line_one] if line_one else []
+
+                if remaining:
+                    line_two = " ".join(remaining)
+                    if stringWidth(line_two, font_name, size) > max_width:
+                        continue
+                    lines.append(line_two)
+
+                total_height = (
+                    len(lines) * size
+                    + max(0, len(lines) - 1) * TEXT_GAP
+                )
+                if lines and total_height <= max_height:
+                    return lines, size
+
+            size -= step
+
+        fallback_line = " ".join(words)
+        fallback_size = shrink_fit(
+            fallback_line,
+            max_width,
+            max_font=max_font,
+            min_font=min_font,
+            font_name=font_name,
+        )
+        fallback_size = min(fallback_size, max_height)
+        return ([fallback_line], fallback_size)
