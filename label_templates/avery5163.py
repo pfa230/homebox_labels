@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Iterable, List, Sequence, Tuple
+from typing import List, Tuple
 
 import qrcode
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
-from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
 from label_content import LabelContent
+from .utils import shrink_fit, wrap_text_to_width
 
 PAGE_SIZE = letter
 
@@ -36,7 +36,7 @@ V_GAP = 0.00 * inch
 OFFSET_X = 0.00 * inch
 OFFSET_Y = 0.00 * inch
 
-LABEL_PADDING = 0.12 * inch
+LABEL_PADDING = 0.1 * inch
 TEXT_BOTTOM_PAD = 0.06 * inch
 
 _FONTS = build_font_config(
@@ -67,48 +67,6 @@ def get_label_grid() -> List[Tuple[float, float, float, float]]:
             right = left + LABEL_W
             grid.append((left, bottom, right, top))
     return grid
-
-
-def _wrap_text_to_width(
-    text: str,
-    font_name: str,
-    font_size: float,
-    max_width_pt: float,
-) -> Iterable[str]:
-    if not text or max_width_pt <= 0:
-        return []
-
-    words = text.split()
-    if not words:
-        return []
-
-    lines: List[str] = []
-    current: List[str] = []
-    for word in words:
-        tentative = " ".join(current + [word]) if current else word
-        if stringWidth(tentative, font_name, font_size) <= max_width_pt or not current:
-            current.append(word)
-        else:
-            lines.append(" ".join(current))
-            current = [word]
-    if current:
-        lines.append(" ".join(current))
-    return lines
-
-
-def _shrink_fit(
-    text: str,
-    max_width_pt: float,
-    max_font: float,
-    min_font: float,
-    font_name: str,
-    step: float = 0.5,
-) -> float:
-    size = max_font
-    step = max(step, 0.25)
-    while size >= min_font and stringWidth(text, font_name, size) > max_width_pt:
-        size -= step
-    return max(size, min_font)
 
 
 def _draw_qr_image(canvas_obj: canvas.Canvas, url: str):
@@ -171,7 +129,7 @@ def _render_label_text(
     title = content.title.strip() or "Unnamed"
     title_max = _FONTS.title.size
     title_min = max(title_max * 0.5, 8.0)
-    title_size = _shrink_fit(
+    title_size = shrink_fit(
         title,
         text_max_width,
         max_font=title_max,
@@ -186,7 +144,7 @@ def _render_label_text(
     if body_text:
         body_max = _FONTS.content.size
         body_min = max(body_max * 0.5, 6.0)
-        body_size = _shrink_fit(
+        body_size = shrink_fit(
             body_text,
             text_max_width,
             max_font=body_max,
@@ -204,7 +162,7 @@ def _render_label_text(
             return
         text = f"{prefix}{value.strip()}"
         info_lines.extend(
-            _wrap_text_to_width(
+            wrap_text_to_width(
                 text=text,
                 font_name=_FONTS.label.font_name,
                 font_size=_FONTS.label.size,
