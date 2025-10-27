@@ -4,10 +4,13 @@
 import argparse
 import os
 import re
+from io import BytesIO
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
 from reportlab.pdfgen import canvas
+
+import fitz
 
 from homebox_api import HomeboxApiManager
 from label_types import LabelContent
@@ -163,13 +166,92 @@ def _to_label_content(
     )
 
 
-def render_pdf(
-    output_path: str,
+def render(
+    output_path: str | None,
     template: LabelTemplate,
     labels: Sequence[LabelContent],
     skip: int,
     draw_outline: bool,
-) -> None:
+) -> str:
+    template.reset()
+    if template.page_size:
+        return render_pdf(output_path, template, labels, skip, draw_outline)
+    else:
+        if draw_outline:
+            raise SystemExit(
+                "--draw-outline is not compatible with non-PDF templates."
+            )
+        if skip > 0:
+            raise SystemExit(
+                "--skip is not compatible with non-PDF templates."
+            )
+        return render_png(output_path, template, labels)
+
+
+def render_png(
+    output_path: str | None,
+    template: LabelTemplate,
+    labels: Sequence[LabelContent],
+) -> str:
+    output_path = output_path or "locations"
+    total = len(labels)
+    index = 0
+
+    template.reset()
+
+    page_size = template.page_size
+
+    file_count = 0
+    while index < total:
+        if index >= total:
+            break
+
+        label = labels[index]
+        geometry = template.next_label_geometry(label)
+
+        if geometry.width <= 0 or geometry.height <= 0:
+            raise SystemExit(
+                "Template produced non-positive geometry dimensions."
+            )
+
+        buffer = BytesIO()
+        canvas_obj = canvas.Canvas(
+            buffer,
+            pagesize=(geometry.width, geometry.height),
+        )
+
+        canvas_obj.saveState()
+        canvas_obj.translate(geometry.left, geometry.bottom)
+        template.draw_label(canvas_obj, label, geometry=geometry)
+        canvas_obj.restoreState()
+        canvas_obj.showPage()
+        canvas_obj.save()
+
+        png_name = f"{output_path}_{file_count + 1:02d}.png"
+        pdf_bytes = buffer.getvalue()
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            page = doc.load_page(0)
+            pix = page.get_pixmap(dpi=300)
+            pix.save(png_name)
+
+        file_count += 1
+        index += 1
+        template.consume_page_break()
+
+    if file_count == 0:
+        return "No labels matched the provided filters; no output generated."
+
+    return f"Wrote {file_count} PNG files with prefix '{output_path}_'."
+
+
+def render_pdf(
+    output_path: str | None,
+    template: LabelTemplate,
+    labels: Sequence[LabelContent],
+    skip: int,
+    draw_outline: bool,
+) -> str:
+    output_path = output_path or "locations.pdf"
     total = len(labels)
     skip_remaining = max(0, skip)
     index = 0
@@ -177,17 +259,12 @@ def render_pdf(
     template.reset()
 
     page_size = template.page_size
-    canvas_kwargs = {"pagesize": page_size} if page_size else {}
-    canvas_obj = canvas.Canvas(output_path, **canvas_kwargs)
+    canvas_obj = canvas.Canvas(output_path, pagesize=page_size)
 
     while index < total or skip_remaining > 0:
         if skip_remaining > 0:
-            geometry = template.next_label_geometry(None)
+            template.next_label_geometry(None)
             skip_remaining -= 1
-
-            if page_size is None:
-                canvas_obj.setPageSize((geometry.width, geometry.height))
-
             if template.consume_page_break() and (
                 index < total or skip_remaining > 0
             ):
@@ -204,9 +281,6 @@ def render_pdf(
             raise SystemExit(
                 "Template produced non-positive geometry dimensions."
             )
-
-        if page_size is None:
-            canvas_obj.setPageSize((geometry.width, geometry.height))
 
         if draw_outline:
             canvas_obj.saveState()
@@ -232,6 +306,7 @@ def render_pdf(
             canvas_obj.showPage()
 
     canvas_obj.save()
+    return f"Wrote {output_path}"
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -300,11 +375,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         password=args.password,
     )
 
-    output = args.output or f"locations_{args.template}.pdf"
     labels = collect_label_contents(api_manager, args.base, args.name_pattern)
-    render_pdf(output, template, labels, args.skip, args.draw_outline)
+    message = render(
+        args.output,
+        template,
+        labels,
+        args.skip,
+        args.draw_outline,
+    )
 
-    print(f"Wrote {output}")
+    print(message)
     return 0
 
 

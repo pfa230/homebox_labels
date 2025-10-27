@@ -23,12 +23,10 @@ TEXT_GAP = 1.5 * mm
 
 _FONTS = build_font_config(
     family="Inter",
-    title_spec=FontSpec(weight=700, size=18),
-    content_spec=FontSpec(weight=500, size=14),
+    title_spec=FontSpec(weight=500, size=20),
+    content_spec=FontSpec(weight=600, size=20),
     label_spec=FontSpec(weight=500, size=12),
 )
-
-_EMPTY_LABEL = LabelContent("", "", "")
 
 
 def _compute_width(label: LabelContent) -> float:
@@ -71,8 +69,10 @@ class Template(LabelTemplate):
         self,
         label: LabelContent | None,
     ) -> LabelGeometry:  # type: ignore[override]
-        effective_label = label or _EMPTY_LABEL
-        width = _compute_width(effective_label)
+        if not label:
+            raise SystemError("Missing label content")
+
+        width = _compute_width(label)
         self._page_break_pending = True
         return LabelGeometry(0.0, 0.0, width, LABEL_HEIGHT)
 
@@ -134,17 +134,3 @@ class Template(LabelTemplate):
             body_baseline = title_baseline - TEXT_GAP - body_size
             canvas_obj.setFont(_FONTS.content.font_name, body_size)
             canvas_obj.drawString(text_left, body_baseline, body_text)
-
-        tags = content.categories_text.strip()
-        if tags:
-            tag_lines = wrap_text_to_width(
-                text=tags,
-                font_name=_FONTS.label.font_name,
-                font_size=_FONTS.label.size,
-                max_width_pt=text_area_width,
-            )
-            y = LABEL_PADDING
-            canvas_obj.setFont(_FONTS.label.font_name, _FONTS.label.size)
-            for line in tag_lines:
-                canvas_obj.drawString(text_left, y, line)
-                y += _FONTS.label.size + TEXT_GAP

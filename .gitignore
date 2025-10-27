@@ -1,5 +1,6 @@
 .env
 *.pdf
+*.png
 .ruff_cache
 .venv
 .vscode
