@@ -22,6 +22,12 @@ class LabelTemplate(ABC):
 
         return None
 
+    @property
+    def raster_dpi(self) -> int:
+        """Return DPI for rasterized outputs (PNG), defaults to 300."""
+
+        return 300
+
     @abstractmethod
     def reset(self) -> None:
         """Clear any pagination state before a new rendering run."""
@@ -40,8 +46,6 @@ class LabelTemplate(ABC):
         self,
         canvas_obj: Canvas,
         content: LabelContent,
-        *,
-        geometry: LabelGeometry,
     ) -> None:
         """Paint ``content`` into ``geometry`` using the provided canvas."""
 

@@ -15,10 +15,13 @@ from label_types import LabelContent, LabelGeometry
 from .base import LabelTemplate
 from .utils import shrink_fit
 
-LABEL_HEIGHT = 24 * mm
+LABEL_HEIGHT = 18 * mm
+QR_TEXT_GAP = 1 * mm
+LABEL_MARGIN_LEFT = 3 * mm
+LABEL_MARGIN_RIGHT = 3 * mm
+
 MAX_WIDTH = 100 * mm
 MIN_WIDTH = 30 * mm
-LABEL_PADDING = 1 * mm
 TEXT_GAP = 1 * mm
 
 _FONTS = build_font_config(
@@ -28,11 +31,9 @@ _FONTS = build_font_config(
     label_spec=FontSpec(weight=500, size=12),
 )
 
-_EMPTY_LABEL = LabelContent("", "", "")
-
 
 def _compute_width(label: LabelContent) -> float:
-    qr_size = LABEL_HEIGHT - 2 * LABEL_PADDING
+    qr_size = LABEL_HEIGHT
     text_lines = [
         label.title.strip() or "",
         label.content.strip() or "",
@@ -53,8 +54,9 @@ def _compute_width(label: LabelContent) -> float:
         font_name, font_size = font_cycle[min(idx, len(font_cycle) - 1)]
         text_widths.append(stringWidth(line, font_name, font_size))
 
-    desired_text_width = max(text_widths + [0]) + LABEL_PADDING
-    required = LABEL_PADDING + qr_size + LABEL_PADDING + desired_text_width
+    desired_text_width = max(text_widths + [0])
+    required = LABEL_MARGIN_LEFT + qr_size + QR_TEXT_GAP + \
+        desired_text_width + LABEL_MARGIN_RIGHT
     return min(max(required, MIN_WIDTH), MAX_WIDTH)
 
 
@@ -122,13 +124,18 @@ class Template(LabelTemplate):
     def reset(self) -> None:  # type: ignore[override]
         self._page_break_pending = False
 
+    @property
+    def raster_dpi(self) -> int:  # type: ignore[override]
+        return 180
+
     def next_label_geometry(
         self,
         label: LabelContent | None,
     ) -> LabelGeometry:  # type: ignore[override]
-        effective_label = label or _EMPTY_LABEL
+        if not label:
+            raise SystemError("Missing label")
 
-        width = _compute_width(effective_label)
+        width = _compute_width(label)
         self._page_break_pending = True
         return LabelGeometry(0.0, 0.0, width, LABEL_HEIGHT)
 
@@ -141,12 +148,10 @@ class Template(LabelTemplate):
         self,
         canvas_obj: canvas.Canvas,
         content: LabelContent,
-        *,
-        geometry: LabelGeometry,
     ) -> None:  # type: ignore[override]
-        width = geometry.width
-        qr_size = LABEL_HEIGHT - 2 * LABEL_PADDING
-        text_area_width = max(width - qr_size - 3 * LABEL_PADDING, 0)
+        qr_size = LABEL_HEIGHT
+        text_area_width = _compute_width(
+            content) - qr_size - QR_TEXT_GAP - LABEL_MARGIN_RIGHT
 
         buffer = BytesIO()
         qr = qrcode.QRCode(border=0)
@@ -157,15 +162,15 @@ class Template(LabelTemplate):
 
         canvas_obj.drawImage(
             ImageReader(buffer),
-            LABEL_PADDING,
-            LABEL_PADDING,
+            LABEL_MARGIN_LEFT,
+            0,
             width=qr_size,
             height=qr_size,
             preserveAspectRatio=True,
             mask="auto",
         )
 
-        text_left = LABEL_PADDING * 2 + qr_size
+        text_left = LABEL_MARGIN_LEFT + QR_TEXT_GAP + qr_size
         title = content.title.strip() or "Unnamed"
         title_size = shrink_fit(
             title,
@@ -174,13 +179,13 @@ class Template(LabelTemplate):
             min_font=max(_FONTS.title.size * 0.5, 6.0),
             font_name=_FONTS.title.font_name,
         )
-        title_baseline = LABEL_HEIGHT - LABEL_PADDING - title_size
+        title_baseline = LABEL_HEIGHT - title_size
         canvas_obj.setFont(_FONTS.title.font_name, title_size)
         canvas_obj.drawString(text_left, title_baseline, title)
 
         body_text = content.content.strip()
         if body_text:
-            available_height = title_baseline - TEXT_GAP - LABEL_PADDING
+            available_height = title_baseline - TEXT_GAP
             if available_height > 0:
                 body_lines, body_size = _wrap_content_lines(
                     body_text,

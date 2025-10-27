@@ -195,10 +195,7 @@ class Template(LabelTemplate):
         self,
         canvas_obj: canvas.Canvas,
         content: LabelContent,
-        *,
-        geometry: LabelGeometry,
     ) -> None:  # type: ignore[override]
-        _ = geometry
         _render_col_1(canvas_obj, content)
         _render_col_2(canvas_obj, content)
 

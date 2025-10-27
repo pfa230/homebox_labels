@@ -200,6 +200,7 @@ def render_png(
     template.reset()
 
     file_count = 0
+    dpi = getattr(template, "raster_dpi", 300)
     while index < total:
         if index >= total:
             break
@@ -220,7 +221,7 @@ def render_png(
 
         canvas_obj.saveState()
         canvas_obj.translate(geometry.left, geometry.bottom)
-        template.draw_label(canvas_obj, label, geometry=geometry)
+        template.draw_label(canvas_obj, label)
         canvas_obj.restoreState()
         canvas_obj.showPage()
         canvas_obj.save()
@@ -229,7 +230,7 @@ def render_png(
         pdf_bytes = buffer.getvalue()
         with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
             page = doc.load_page(0)
-            pix = page.get_pixmap(dpi=300)
+            pix = page.get_pixmap(dpi=dpi)
             pix.save(png_name)
 
         file_count += 1
@@ -293,7 +294,7 @@ def render_pdf(
 
         canvas_obj.saveState()
         canvas_obj.translate(geometry.left, geometry.bottom)
-        template.draw_label(canvas_obj, label, geometry=geometry)
+        template.draw_label(canvas_obj, label)
         canvas_obj.restoreState()
 
         index += 1
