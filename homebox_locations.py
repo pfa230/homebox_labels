@@ -199,8 +199,6 @@ def render_png(
 
     template.reset()
 
-    page_size = template.page_size
-
     file_count = 0
     while index < total:
         if index >= total:

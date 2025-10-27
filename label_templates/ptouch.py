@@ -13,20 +13,22 @@ from reportlab.pdfgen import canvas
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
 from .base import LabelTemplate
-from .utils import shrink_fit, wrap_text_to_width
+from .utils import shrink_fit
 
 LABEL_HEIGHT = 24 * mm
 MAX_WIDTH = 100 * mm
 MIN_WIDTH = 30 * mm
-LABEL_PADDING = 2 * mm
-TEXT_GAP = 1.5 * mm
+LABEL_PADDING = 1 * mm
+TEXT_GAP = 1 * mm
 
 _FONTS = build_font_config(
     family="Inter",
-    title_spec=FontSpec(weight=500, size=20),
-    content_spec=FontSpec(weight=600, size=20),
+    title_spec=FontSpec(weight=400, size=16),
+    content_spec=FontSpec(weight=600, size=24),
     label_spec=FontSpec(weight=500, size=12),
 )
+
+_EMPTY_LABEL = LabelContent("", "", "")
 
 
 def _compute_width(label: LabelContent) -> float:
@@ -56,6 +58,61 @@ def _compute_width(label: LabelContent) -> float:
     return min(max(required, MIN_WIDTH), MAX_WIDTH)
 
 
+def _wrap_content_lines(
+    text: str,
+    max_width: float,
+    max_height: float,
+) -> tuple[list[str], float]:
+    """Return up to two lines that satisfy width and height limits."""
+
+    stripped = text.strip()
+    if not stripped:
+        return [], _FONTS.content.size
+
+    words = stripped.split()
+    font_name = _FONTS.content.font_name
+    max_font = _FONTS.content.size
+    min_font = max(max_font * 0.5, 6.0)
+    step = 0.5
+    size = max_font
+
+    while size >= min_font:
+        for split_idx in range(1, len(words) + 1):
+            line_one = " ".join(words[:split_idx]).strip()
+            remaining = words[split_idx:]
+
+            if line_one and stringWidth(line_one, font_name, size) > max_width:
+                break
+
+            lines: list[str] = [line_one] if line_one else []
+
+            if remaining:
+                line_two = " ".join(remaining)
+                if stringWidth(line_two, font_name, size) > max_width:
+                    continue
+                lines.append(line_two)
+
+            total_height = (
+                len(lines) * size
+                + max(0, len(lines) - 1) * TEXT_GAP
+            )
+            if lines and total_height <= max_height:
+                return lines, size
+
+        size -= step
+
+    fallback_line = " ".join(words)
+    fallback_size = shrink_fit(
+        fallback_line,
+        max_width,
+        max_font=max_font,
+        min_font=min_font,
+        font_name=font_name,
+    )
+    fallback_size = min(fallback_size, max_height)
+    return ([fallback_line], fallback_size)
+
+
 class Template(LabelTemplate):
     """Stateful template for Brother P-Touch continuous tape."""
 
@@ -69,10 +126,9 @@ class Template(LabelTemplate):
         self,
         label: LabelContent | None,
     ) -> LabelGeometry:  # type: ignore[override]
-        if not label:
-            raise SystemError("Missing label content")
+        effective_label = label or _EMPTY_LABEL
 
-        width = _compute_width(label)
+        width = _compute_width(effective_label)
         self._page_break_pending = True
         return LabelGeometry(0.0, 0.0, width, LABEL_HEIGHT)
 
@@ -124,13 +180,23 @@ class Template(LabelTemplate):
 
         body_text = content.content.strip()
         if body_text:
-            body_size = shrink_fit(
-                body_text,
-                text_area_width,
-                max_font=_FONTS.content.size,
-                min_font=max(_FONTS.content.size * 0.5, 6.0),
-                font_name=_FONTS.content.font_name,
-            )
-            body_baseline = title_baseline - TEXT_GAP - body_size
-            canvas_obj.setFont(_FONTS.content.font_name, body_size)
-            canvas_obj.drawString(text_left, body_baseline, body_text)
+            available_height = title_baseline - TEXT_GAP - LABEL_PADDING
+            if available_height > 0:
+                body_lines, body_size = _wrap_content_lines(
+                    body_text,
+                    text_area_width,
+                    available_height,
+                )
+            else:
+                body_lines, body_size = [], _FONTS.content.size
+            if body_lines:
+                canvas_obj.setFont(_FONTS.content.font_name, body_size)
+                first_baseline = title_baseline - TEXT_GAP - body_size
+                canvas_obj.drawString(text_left, first_baseline, body_lines[0])
+                if len(body_lines) > 1:
+                    second_baseline = first_baseline - TEXT_GAP - body_size
+                    canvas_obj.drawString(
+                        text_left,
+                        second_baseline,
+                        body_lines[1],
+                    )
