@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 from importlib import import_module
-from types import ModuleType
+
+from .base import LabelTemplate
 
 _TEMPLATE_MAP = {
     "5163": "avery5163",
     "ptouch": "ptouch",
 }
 
-REQUIRED_ATTRS = {"get_label_grid", "draw_label"}
 
-
-def get_template(name: str) -> ModuleType:
-    """Load the template module for the provided identifier."""
+def get_template(name: str) -> LabelTemplate:
+    """Instantiate the template implementation for ``name``."""
 
     key = name.lower()
     module_name = _TEMPLATE_MAP.get(key)
@@ -26,10 +25,14 @@ def get_template(name: str) -> ModuleType:
 
     module = import_module(f"{__name__}.{module_name}")
 
-    missing = [attr for attr in REQUIRED_ATTRS if not hasattr(module, attr)]
-    if missing:
+    template_cls: type[LabelTemplate] | None = getattr(
+        module,
+        "Template",
+        None,
+    )
+    if not template_cls or not issubclass(template_cls, LabelTemplate):
         raise SystemExit(
-            f"Template '{name}' is missing required attributes: {', '.join(missing)}"
+            f"Template '{name}' does not export a valid Template class"
         )
 
-    return module
+    return template_cls()

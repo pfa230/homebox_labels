@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import List
 
 import qrcode
 from reportlab.lib.pagesizes import letter
@@ -13,6 +12,7 @@ from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
+from .base import LabelTemplate
 from .utils import shrink_fit, wrap_text_to_width
 
 PAGE_SIZE = letter
@@ -49,30 +49,7 @@ _FONTS = build_font_config(
 )
 
 
-def get_label_grid() -> List[LabelGeometry]:
-    """Return rectangles for each label on the page."""
-
-    grid: List[LabelGeometry] = []
-    _, page_height = PAGE_SIZE
-
-    for row in range(ROWS):
-        bottom = (
-            page_height
-            - MARGIN_TOP
-            - LABEL_H
-            - row * (LABEL_H + V_GAP)
-            + OFFSET_Y
-        )
-        top = bottom + LABEL_H
-        for col in range(COLS):
-            left = MARGIN_LEFT + col * (LABEL_W + H_GAP) + OFFSET_X
-            right = left + LABEL_W
-            grid.append(LabelGeometry(left, bottom, right, top))
-    return grid
-
-
 def _render_col_1(canvas_obj: canvas.Canvas, content: LabelContent):
-    qr_bottom = LABEL_H - COL_1_W + LABEL_PADDING
     qr_size = COL_1_W - 2 * LABEL_PADDING
 
     title = content.title.strip() or "N/A"
@@ -115,9 +92,6 @@ def _render_col_2(
     canvas_obj: canvas.Canvas,
     content: LabelContent,
 ) -> None:
-    left = QR_SIZE + 2 * LABEL_PADDING
-    width = LABEL_W - left
-
     canvas_obj.saveState()
     canvas_obj.setLineWidth(0.5)
 
@@ -146,7 +120,7 @@ def _render_col_2(
         canvas_obj.setFont(_FONTS.content.font_name, content_size)
         canvas_obj.drawString(text_start_x, body_y, content_text)
 
-    info_lines: List[str] = []
+    info_lines: list[str] = []
 
     def append_info(prefix: str, value: str) -> None:
         if not value:
@@ -175,12 +149,60 @@ def _render_col_2(
             info_y -= _FONTS.label.size + (LABEL_PADDING / 2.0)
 
 
-def draw_label(
-    canvas_obj: canvas.Canvas,
-    content: LabelContent,
-    *,
-    geometry: LabelGeometry | None = None,
-) -> None:
-    qr_size = LABEL_H * 0.75 - 2 * LABEL_PADDING
-    _render_col_1(canvas_obj, content)
-    _render_col_2(canvas_obj, content)
+class Template(LabelTemplate):
+    """Stateful template for Avery 5163 sheets."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @property
+    def page_size(self):  # type: ignore[override]
+        return PAGE_SIZE
+
+    def reset(self) -> None:  # type: ignore[override]
+        self._slots_per_page = ROWS * COLS
+        self._slot_index = 0
+        self._page_break_pending = False
+
+    def next_label_geometry(
+        self,
+        label: LabelContent | None,
+    ) -> LabelGeometry:  # type: ignore[override]
+        _ = label
+        slot = self._slot_index
+        row = slot // COLS
+        col = slot % COLS
+
+        _, page_height = PAGE_SIZE
+
+        bottom = (
+            page_height
+            - MARGIN_TOP
+            - LABEL_H
+            - row * (LABEL_H + V_GAP)
+            + OFFSET_Y
+        )
+        top = bottom + LABEL_H
+        left = MARGIN_LEFT + col * (LABEL_W + H_GAP) + OFFSET_X
+        right = left + LABEL_W
+
+        self._slot_index = (slot + 1) % max(self._slots_per_page, 1)
+        self._page_break_pending = self._slot_index == 0
+
+        return LabelGeometry(left, bottom, right, top)
+
+    def draw_label(
+        self,
+        canvas_obj: canvas.Canvas,
+        content: LabelContent,
+        *,
+        geometry: LabelGeometry,
+    ) -> None:  # type: ignore[override]
+        _ = geometry
+        _render_col_1(canvas_obj, content)
+        _render_col_2(canvas_obj, content)
+
+    def consume_page_break(self) -> bool:  # type: ignore[override]
+        pending = self._page_break_pending
+        self._page_break_pending = False
+        return pending

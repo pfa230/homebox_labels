@@ -4,19 +4,21 @@
 import argparse
 import os
 import re
-import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
-from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from homebox_api import HomeboxApiManager
-from label_types import LabelContent, LabelGeometry
+from label_types import LabelContent
 from label_templates import get_template
+from label_templates.base import LabelTemplate
 
 
-def _filter_locations_by_name(locations: Sequence[Dict], pattern: Optional[str]) -> List[Dict]:
+def _filter_locations_by_name(
+    locations: Sequence[Dict],
+    pattern: Optional[str],
+) -> List[Dict]:
     """Apply the name regex filter declared by the user."""
 
     if not pattern:
@@ -63,7 +65,11 @@ def build_location_paths(tree: Sequence[Dict]) -> Dict[str, List[str]]:
 def location_display_text(name: str) -> str:
     """Normalize user-provided location names."""
 
-    return name.strip() if isinstance(name, str) and name.strip() else "Unnamed"
+    return (
+        name.strip()
+        if isinstance(name, str) and name.strip()
+        else "Unnamed"
+    )
 
 
 def split_name_content(name: str) -> Tuple[str, str]:
@@ -83,14 +89,20 @@ def extract_categories(description: str) -> List[str]:
         stripped = line.strip()
         if stripped.lower().startswith("category:"):
             categories = stripped.split(":", 1)[1]
-            return [item.strip() for item in categories.split(",") if item.strip()]
+            return [
+                item.strip()
+                for item in categories.split(",")
+                if item.strip()
+            ]
     return []
 
 
 def build_ui_url(base_ui: str, loc_id: str) -> str:
     """Construct the dashboard URL for a location."""
 
-    return f"{base_ui}/location/{loc_id}" if loc_id else f"{base_ui}/locations"
+    if loc_id:
+        return f"{base_ui}/location/{loc_id}"
+    return f"{base_ui}/locations"
 
 
 def collect_label_contents(
@@ -130,8 +142,11 @@ def _to_label_content(
 
     loc_id = location.get("id") or ""
     detail_payload = detail_map.get(loc_id, {})
-    description = (detail_payload.get("description")
-                   or location.get("description") or "").strip()
+    description = (
+        detail_payload.get("description")
+        or location.get("description")
+        or ""
+    ).strip()
     categories_text = ", ".join(extract_categories(description))
 
     full_path = path_map.get(loc_id, [])
@@ -150,82 +165,71 @@ def _to_label_content(
 
 def render_pdf(
     output_path: str,
-    template_module,
+    template: LabelTemplate,
     labels: Sequence[LabelContent],
     skip: int,
-    draw_outline: bool
+    draw_outline: bool,
 ) -> None:
     total = len(labels)
     skip_remaining = max(0, skip)
     index = 0
 
-    if hasattr(template_module, "get_label_geometry"):
-        canvas_obj = canvas.Canvas(output_path)
-        while index < total:
-            label = labels[index]
-            geom = template_module.get_label_geometry(label)
-            width = geom.width
-            height = geom.height
-            if width <= 0 or height <= 0:
-                raise SystemExit(
-                    "Template produced non-positive geometry dimensions.")
+    template.reset()
 
-            canvas_obj.setPageSize((width, height))
+    page_size = template.page_size
+    canvas_kwargs = {"pagesize": page_size} if page_size else {}
+    canvas_obj = canvas.Canvas(output_path, **canvas_kwargs)
 
-            if draw_outline:
-                canvas_obj.saveState()
-                canvas_obj.setLineWidth(0.5)
-                canvas_obj.rect(geom.left, geom.bottom, width, height)
-                canvas_obj.restoreState()
+    while index < total or skip_remaining > 0:
+        if skip_remaining > 0:
+            geometry = template.next_label_geometry(None)
+            skip_remaining -= 1
 
-            canvas_obj.saveState()
-            canvas_obj.translate(geom.left, geom.bottom)
-            template_module.draw_label(canvas_obj, label, geometry=geom)
-            canvas_obj.restoreState()
+            if page_size is None:
+                canvas_obj.setPageSize((geometry.width, geometry.height))
 
-            index += 1
-            if index < total:
+            if template.consume_page_break() and (
+                index < total or skip_remaining > 0
+            ):
                 canvas_obj.showPage()
+            continue
 
-        canvas_obj.save()
-        return
-
-    grid = template_module.get_label_grid()
-    if not grid:
-        raise SystemExit("Template returned an empty label grid.")
-
-    page_size = getattr(template_module, "PAGE_SIZE", letter)
-    canvas_obj = canvas.Canvas(output_path, pagesize=page_size)
-
-    while True:
-        for label_geom in grid:
-            if skip_remaining > 0:
-                skip_remaining -= 1
-                continue
-            if index >= total:
-                break
-
-            if draw_outline:
-                canvas_obj.saveState()
-                canvas_obj.setLineWidth(0.5)
-                canvas_obj.rect(
-                    label_geom.left,
-                    label_geom.bottom,
-                    label_geom.width,
-                    label_geom.height,
-                )
-                canvas_obj.restoreState()
-
-            canvas_obj.saveState()
-            canvas_obj.translate(label_geom.left, label_geom.bottom)
-            template_module.draw_label(
-                canvas_obj, labels[index], geometry=label_geom)
-            canvas_obj.restoreState()
-            index += 1
-
-        if index >= total and skip_remaining <= 0:
+        if index >= total:
             break
-        canvas_obj.showPage()
+
+        label = labels[index]
+        geometry = template.next_label_geometry(label)
+
+        if geometry.width <= 0 or geometry.height <= 0:
+            raise SystemExit(
+                "Template produced non-positive geometry dimensions."
+            )
+
+        if page_size is None:
+            canvas_obj.setPageSize((geometry.width, geometry.height))
+
+        if draw_outline:
+            canvas_obj.saveState()
+            canvas_obj.setLineWidth(0.5)
+            canvas_obj.rect(
+                geometry.left,
+                geometry.bottom,
+                geometry.width,
+                geometry.height,
+            )
+            canvas_obj.restoreState()
+
+        canvas_obj.saveState()
+        canvas_obj.translate(geometry.left, geometry.bottom)
+        template.draw_label(canvas_obj, label, geometry=geometry)
+        canvas_obj.restoreState()
+
+        index += 1
+
+        if template.consume_page_break() and (
+            index < total or skip_remaining > 0
+        ):
+            canvas_obj.showPage()
 
     canvas_obj.save()
 
@@ -246,22 +250,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "-n", "--name-pattern",
         default="box.*",
-        help="Case-insensitive regex filter applied to location display names (default: box.*)",
+        help=(
+            "Case-insensitive regex filter applied to location display names "
+            "(default: box.*)"
+        ),
     )
     parser.add_argument(
         "--base",
         default=os.getenv("HOMEBOX_API_URL"),
-        help="Homebox base URL (defaults to HOMEBOX_API_URL from the environment/.env).",
+        help=(
+            "Homebox base URL (defaults to HOMEBOX_API_URL from the "
+            "environment/.env)."
+        ),
     )
     parser.add_argument(
         "--username",
         default=os.getenv("HOMEBOX_USERNAME"),
-        help="Homebox username (defaults to HOMEBOX_USERNAME from the environment/.env).",
+        help=(
+            "Homebox username (defaults to HOMEBOX_USERNAME from the "
+            "environment/.env)."
+        ),
     )
     parser.add_argument(
         "--password",
         default=os.getenv("HOMEBOX_PASSWORD"),
-        help="Homebox password (defaults to HOMEBOX_PASSWORD from the environment/.env).",
+        help=(
+            "Homebox password (defaults to HOMEBOX_PASSWORD from the "
+            "environment/.env)."
+        ),
     )
     parser.add_argument(
         "-t", "--template",
@@ -276,7 +292,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     args = parser.parse_args(argv)
 
-    template_module = get_template(args.template)
+    template = get_template(args.template)
 
     api_manager = HomeboxApiManager(
         base_url=args.base,
@@ -286,7 +302,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     output = args.output or f"locations_{args.template}.pdf"
     labels = collect_label_contents(api_manager, args.base, args.name_pattern)
-    render_pdf(output, template_module, labels, args.skip, args.draw_outline)
+    render_pdf(output, template, labels, args.skip, args.draw_outline)
 
     print(f"Wrote {output}")
     return 0
