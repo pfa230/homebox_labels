@@ -153,7 +153,6 @@ class Template(LabelTemplate):
         canvas_obj: canvas.Canvas,
         content: LabelContent,
     ) -> None:
-        canvas_obj.saveState()
         canvas_obj.setLineWidth(0.5)
 
         content_row_y = LABEL_H * 3 / 4
@@ -161,7 +160,6 @@ class Template(LabelTemplate):
 
         canvas_obj.line(COL_1_W, 0, COL_1_W, LABEL_H)
         canvas_obj.line(COL_1_W, content_row_y, LABEL_W, content_row_y)
-        canvas_obj.restoreState()
 
         text_start_x = COL_1_W + LABEL_PADDING
         text_max_width = COL_2_W - 2 * LABEL_PADDING

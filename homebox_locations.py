@@ -225,7 +225,7 @@ def render_pdf(
     for _ in range(skip):
         template.next_label_geometry()
 
-    first_page = False
+    first_page = True
     for label in labels:
         geometry = template.next_label_geometry()
         if geometry.on_new_page:

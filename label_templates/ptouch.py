@@ -14,21 +14,25 @@ from reportlab.pdfgen import canvas
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
 from .base import LabelTemplate
-from .utils import shrink_fit
+from .utils import shrink_fit, wrap_text_to_width_multiline
 
 LABEL_HEIGHT = 18 * mm
 QR_TEXT_GAP = 1 * mm
 LABEL_MARGIN_LEFT = 3 * mm
 LABEL_MARGIN_RIGHT = 3 * mm
 
-MAX_WIDTH = 100 * mm
+MAX_WIDTH = 75 * mm
 MIN_WIDTH = 30 * mm
 TEXT_GAP = 1 * mm
 
+FONT_SIZE_TITLE = 14
+MAX_FONT_SIZE_CONTENT = 24
+MIN_FONT_SIZE_CONTENT = 10
+
 _FONTS = build_font_config(
     family="Inter",
-    title_spec=FontSpec(weight=400, size=16),
-    content_spec=FontSpec(weight=600, size=24),
+    title_spec=FontSpec(weight=600, size=FONT_SIZE_TITLE),
+    content_spec=FontSpec(weight=400, size=MAX_FONT_SIZE_CONTENT),
     label_spec=FontSpec(weight=500, size=12),
 )
 
@@ -105,14 +109,11 @@ class Template(LabelTemplate):
         body_text = content.content.strip()
         if body_text:
             available_height = title_baseline - TEXT_GAP
-            if available_height > 0:
-                body_lines, body_size = self._wrap_content_lines(
-                    body_text,
-                    text_area_width,
-                    available_height,
-                )
-            else:
-                body_lines, body_size = [], _FONTS.content.size
+            body_lines, body_size = self._wrap_content_lines(
+                body_text,
+                text_area_width,
+                available_height,
+            )
             if body_lines:
                 canvas_obj.setFont(_FONTS.content.font_name, body_size)
                 first_baseline = title_baseline - TEXT_GAP - body_size
@@ -173,45 +174,28 @@ class Template(LabelTemplate):
         if not stripped:
             return [], _FONTS.content.size
 
-        words = stripped.split()
-        font_name = _FONTS.content.font_name
-        max_font = _FONTS.content.size
-        min_font = max(max_font * 0.5, 6.0)
+        attempt_size = MAX_FONT_SIZE_CONTENT
         step = 0.5
-        size = max_font
 
-        while size >= min_font:
-            for split_idx in range(1, len(words) + 1):
-                line_one = " ".join(words[:split_idx]).strip()
-                remaining = words[split_idx:]
+        while attempt_size >= MIN_FONT_SIZE_CONTENT:
+            lines, chosen_size = wrap_text_to_width_multiline(
+                text=stripped,
+                font_name=_FONTS.content.font_name,
+                font_size=attempt_size,
+                max_width_pt=max_width,
+                max_lines=2,
+                min_font_size=MIN_FONT_SIZE_CONTENT,
+                step=step,
+            )
+            if lines:
+                if len(lines) * (chosen_size + TEXT_GAP) <= max_height:
+                    return lines, chosen_size
+                attempt_size = chosen_size
 
-                if line_one and stringWidth(line_one, font_name, size) > max_width:
-                    break
+            attempt_size -= step
 
-                lines: list[str] = [line_one] if line_one else []
-
-                if remaining:
-                    line_two = " ".join(remaining)
-                    if stringWidth(line_two, font_name, size) > max_width:
-                        continue
-                    lines.append(line_two)
-
-                total_height = (
-                    len(lines) * size
-                    + max(0, len(lines) - 1) * TEXT_GAP
-                )
-                if lines and total_height <= max_height:
-                    return lines, size
-
-            size -= step
-
-        fallback_line = " ".join(words)
-        fallback_size = shrink_fit(
-            fallback_line,
-            max_width,
-            max_font=max_font,
-            min_font=min_font,
-            font_name=font_name,
+        fallback_size = max(
+            MIN_FONT_SIZE_CONTENT,
+            min(max_height, MAX_FONT_SIZE_CONTENT),
         )
-        fallback_size = min(fallback_size, max_height)
-        return ([fallback_line], fallback_size)
+        return ([stripped], fallback_size)

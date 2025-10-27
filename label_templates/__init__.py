@@ -8,6 +8,7 @@ from .base import LabelTemplate
 
 _TEMPLATE_MAP = {
     "5163": "avery5163",
+    "5163_vert": "avery5163_vert",
     "ptouch": "ptouch",
 }
 
