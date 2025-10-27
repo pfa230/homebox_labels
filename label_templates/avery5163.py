@@ -12,8 +12,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
-from label_content import LabelContent
-from .types import LabelGeometry
+from label_types import LabelContent, LabelGeometry
 from .utils import shrink_fit, wrap_text_to_width
 
 PAGE_SIZE = letter
@@ -180,6 +179,8 @@ def _render_col_2(
 def draw_label(
     canvas_obj: canvas.Canvas,
     content: LabelContent,
+    *,
+    geometry: LabelGeometry | None = None,
 ) -> None:
     qr_size = LABEL_H * 0.75 - 2 * LABEL_PADDING
     _render_col_1(canvas_obj, content)

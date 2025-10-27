@@ -152,16 +152,46 @@ def render_pdf(
     *,
     draw_outline: bool = True,
 ) -> None:
+    total = len(labels)
+    skip_remaining = max(0, skip)
+    index = 0
+
+    if hasattr(template_module, "get_label_geometry"):
+        canvas_obj = canvas.Canvas(output_path)
+        while index < total:
+            label = labels[index]
+            geom = template_module.get_label_geometry(label)
+            width = geom.width
+            height = geom.height
+            if width <= 0 or height <= 0:
+                raise SystemExit("Template produced non-positive geometry dimensions.")
+
+            canvas_obj.setPageSize((width, height))
+
+            if draw_outline:
+                canvas_obj.saveState()
+                canvas_obj.setLineWidth(0.5)
+                canvas_obj.rect(geom.left, geom.bottom, width, height)
+                canvas_obj.restoreState()
+
+            canvas_obj.saveState()
+            canvas_obj.translate(geom.left, geom.bottom)
+            template_module.draw_label(canvas_obj, label, geometry=geom)
+            canvas_obj.restoreState()
+
+            index += 1
+            if index < total:
+                canvas_obj.showPage()
+
+        canvas_obj.save()
+        return
+
     grid = template_module.get_label_grid()
     if not grid:
         raise SystemExit("Template returned an empty label grid.")
 
     page_size = getattr(template_module, "PAGE_SIZE", letter)
     canvas_obj = canvas.Canvas(output_path, pagesize=page_size)
-
-    total = len(labels)
-    skip_remaining = max(0, skip)
-    index = 0
 
     while True:
         for label_geom in grid:
@@ -184,7 +214,7 @@ def render_pdf(
 
             canvas_obj.saveState()
             canvas_obj.translate(label_geom.left, label_geom.bottom)
-            template_module.draw_label(canvas_obj, labels[index])
+            template_module.draw_label(canvas_obj, labels[index], geometry=label_geom)
             canvas_obj.restoreState()
             index += 1
 

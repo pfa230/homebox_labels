@@ -7,6 +7,7 @@ from types import ModuleType
 
 _TEMPLATE_MAP = {
     "5163": "avery5163",
+    "ptouch": "ptouch",
 }
 
 REQUIRED_ATTRS = {"get_label_grid", "draw_label"}
@@ -32,4 +33,3 @@ def get_template(name: str) -> ModuleType:
         )
 
     return module
-
