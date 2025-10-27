@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 from urllib.parse import urlparse
 import urllib.request
 
@@ -16,8 +16,86 @@ from reportlab.pdfbase.ttfonts import TTFont as ReportLabTTFont
 
 
 FONTS_DIR = Path(__file__).resolve().parent / "fonts"
-FONT_SOURCES: Dict[str, str] = {
-    "inter": "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz,wght%5D.ttf",
+
+
+@dataclass(frozen=True)
+class VariableFontInfo:
+    family_name: str
+    url: str
+
+
+@dataclass(frozen=True)
+class StaticFontInfo:
+    family_name: str
+    base_url: str
+    files: Dict[int, str]
+
+
+FontSource = Union[VariableFontInfo, StaticFontInfo]
+
+
+def _font_key(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
+FONT_SOURCES: Dict[str, FontSource] = {
+    _font_key("Inter"): VariableFontInfo(
+        family_name="Inter",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz,wght%5D.ttf",
+    ),
+    _font_key("Inter Tight"): VariableFontInfo(
+        family_name="InterTight",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/intertight/InterTight%5Bwght%5D.ttf",
+    ),
+    _font_key("IBM Plex Sans"): VariableFontInfo(
+        family_name="IBMPlexSans",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexsans/IBMPlexSans%5Bwdth,wght%5D.ttf",
+    ),
+    _font_key("Roboto Condensed"): VariableFontInfo(
+        family_name="RobotoCondensed",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf",
+    ),
+    _font_key("Archivo Narrow"): VariableFontInfo(
+        family_name="ArchivoNarrow",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/archivonarrow/ArchivoNarrow%5Bwght%5D.ttf",
+    ),
+    _font_key("Space Grotesk"): VariableFontInfo(
+        family_name="SpaceGrotesk",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf",
+    ),
+    _font_key("Source Sans 3"): VariableFontInfo(
+        family_name="SourceSans3",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/sourcesans3/SourceSans3%5Bwght%5D.ttf",
+    ),
+    _font_key("Lexend"): VariableFontInfo(
+        family_name="Lexend",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/lexend/Lexend%5Bwght%5D.ttf",
+    ),
+    _font_key("Noto Sans"): VariableFontInfo(
+        family_name="NotoSans",
+        url="https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth,wght%5D.ttf",
+    ),
+    _font_key("IBM Plex Sans Condensed"): StaticFontInfo(
+        family_name="IBMPlexSansCondensed",
+        base_url="https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexsanscondensed/",
+        files={
+            100: "IBMPlexSansCondensed-Thin.ttf",
+            200: "IBMPlexSansCondensed-ExtraLight.ttf",
+            300: "IBMPlexSansCondensed-Light.ttf",
+            400: "IBMPlexSansCondensed-Regular.ttf",
+            500: "IBMPlexSansCondensed-Medium.ttf",
+            600: "IBMPlexSansCondensed-SemiBold.ttf",
+            700: "IBMPlexSansCondensed-Bold.ttf",
+        },
+    ),
+    _font_key("Atkinson Hyperlegible"): StaticFontInfo(
+        family_name="AtkinsonHyperlegible",
+        base_url="https://raw.githubusercontent.com/google/fonts/main/ofl/atkinsonhyperlegible/",
+        files={
+            400: "AtkinsonHyperlegible-Regular.ttf",
+            700: "AtkinsonHyperlegible-Bold.ttf",
+        },
+    ),
 }
 
 
@@ -93,25 +171,72 @@ class VariableFontManager:
         return buffer
 
 
-def ensure_variable_font(family: str, url: Optional[str] = None) -> Path:
-    """Ensure the requested family variable font exists locally."""
+class FontRegistry:
+    def __init__(self) -> None:
+        self._variable_managers: Dict[str, VariableFontManager] = {}
+    
+        # map (family_name, weight) -> registered font name
+        self._static_registry: Dict[Tuple[str, int], str] = {}
 
-    source_url = url or FONT_SOURCES.get(family.lower())
-    if not source_url:
-        raise SystemExit(
-            f"No download URL configured for font family '{family}'. "
-            "Provide --font-url explicitly."
-        )
+    def get_font_name(self, family_key: str, weight: float, override_url: Optional[str] = None) -> str:
+        info = FONT_SOURCES.get(family_key)
+        if info is None:
+            available = ", ".join(sorted(FONT_SOURCES))
+            raise SystemExit(f"Unknown font family '{family_key}'. Available: {available}")
 
-    FONTS_DIR.mkdir(parents=True, exist_ok=True)
-    filename = Path(urlparse(source_url).path).name or f"{family.lower()}-variable.ttf"
-    destination = FONTS_DIR / filename
-    if not destination.exists():
+        if isinstance(info, VariableFontInfo):
+            return self._get_variable_font_name(info, weight, override_url)
+        return self._get_static_font_name(info, weight)
+
+    def _download(self, url: str, destination: Path) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            return
         try:
-            urllib.request.urlretrieve(source_url, destination)
-        except Exception as exc:  # pragma: no cover - network failure path
-            raise SystemExit(f"Failed to download font '{family}': {exc}") from exc
-    return destination
+            urllib.request.urlretrieve(url, destination)
+        except Exception as exc:  # pragma: no cover
+            raise SystemExit(f"Failed to download font from '{url}': {exc}") from exc
+
+    def _get_variable_font_name(
+        self, info: VariableFontInfo, weight: float, override_url: Optional[str]
+    ) -> str:
+        key = _font_key(info.family_name)
+        manager = self._variable_managers.get(key)
+        if manager is None or override_url:
+            url = override_url or info.url
+            filename = Path(urlparse(url).path).name or f"{info.family_name.lower()}-variable.ttf"
+            destination = FONTS_DIR / filename
+            self._download(url, destination)
+            manager = VariableFontManager(info.family_name, destination)
+            self._variable_managers[key] = manager
+        return manager.font_name_for_weight(weight)
+
+    def _get_static_font_name(self, info: StaticFontInfo, weight: float) -> str:
+        weight_int = int(round(weight))
+        filename = info.files.get(weight_int)
+        if filename is None:
+            # pick the closest available weight
+            available_weights = sorted(info.files)
+            closest = min(available_weights, key=lambda w: abs(w - weight_int))
+            filename = info.files[closest]
+            weight_int = closest
+
+        key = (info.family_name, weight_int)
+        cached = self._static_registry.get(key)
+        if cached:
+            return cached
+
+        family_dir = FONTS_DIR / _font_key(info.family_name).replace(" ", "_")
+        destination = family_dir / filename
+        self._download(info.base_url + filename, destination)
+
+        font_name = f"{info.family_name.replace(' ', '')}-w{weight_int}"
+        pdfmetrics.registerFont(ReportLabTTFont(font_name, destination))
+        self._static_registry[key] = font_name
+        return font_name
+
+
+_REGISTRY = FontRegistry()
 
 
 def build_font_config(
@@ -123,19 +248,18 @@ def build_font_config(
 ) -> FontConfig:
     """Download/register fonts and return ready-to-use settings."""
 
-    font_path = ensure_variable_font(family, url)
-    manager = VariableFontManager(family, font_path)
+    key = _font_key(family)
 
     title_font = FontSettings(
-        font_name=manager.font_name_for_weight(title_spec.weight),
+        font_name=_REGISTRY.get_font_name(key, title_spec.weight, override_url=url),
         size=title_spec.size,
     )
     content_font = FontSettings(
-        font_name=manager.font_name_for_weight(content_spec.weight),
+        font_name=_REGISTRY.get_font_name(key, content_spec.weight, override_url=url),
         size=content_spec.size,
     )
     label_font = FontSettings(
-        font_name=manager.font_name_for_weight(label_spec.weight),
+        font_name=_REGISTRY.get_font_name(key, label_spec.weight, override_url=url),
         size=label_spec.size,
     )
     return FontConfig(title=title_font, content=content_font, label=label_font)
@@ -146,6 +270,4 @@ __all__ = [
     "FontSettings",
     "FontSpec",
     "build_font_config",
-    "ensure_variable_font",
-    "VariableFontManager",
 ]

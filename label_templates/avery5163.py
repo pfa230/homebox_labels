@@ -40,7 +40,7 @@ LABEL_PADDING = 0.1 * inch
 TEXT_BOTTOM_PAD = 0.06 * inch
 
 _FONTS = build_font_config(
-    family="Inter",
+    family="Inter Tight",
     title_spec=FontSpec(weight=700, size=22),
     content_spec=FontSpec(weight=600, size=20),
     label_spec=FontSpec(weight=500, size=12),
