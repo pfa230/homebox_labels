@@ -12,7 +12,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from homebox_api import HomeboxApiManager
-from label_content import LabelContent
+from label_types import LabelContent, LabelGeometry
 from label_templates import get_template
 
 
@@ -131,7 +131,7 @@ def _to_label_content(
     categories_text = ", ".join(extract_categories(description))
 
     full_path = path_map.get(loc_id, [])
-    trimmed_path = full_path[1:-1] if len(full_path) > 2 else []
+    trimmed_path = full_path[:-1] if len(full_path) > 1 else []
     path_text = "->".join(trimmed_path)
 
     title, content = split_name_content(location.get("name") or "")
@@ -164,7 +164,7 @@ def render_pdf(
     index = 0
 
     while True:
-        for left, bottom, right, top in grid:
+        for label_geom in grid:
             if skip_remaining > 0:
                 skip_remaining -= 1
                 continue
@@ -174,11 +174,16 @@ def render_pdf(
             if draw_outline:
                 canvas_obj.saveState()
                 canvas_obj.setLineWidth(0.5)
-                canvas_obj.rect(left, bottom, right - left, top - bottom)
+                canvas_obj.rect(
+                    label_geom.left,
+                    label_geom.bottom,
+                    label_geom.width,
+                    label_geom.height,
+                )
                 canvas_obj.restoreState()
 
             canvas_obj.saveState()
-            canvas_obj.translate(left, bottom)
+            canvas_obj.translate(label_geom.left, label_geom.bottom)
             template_module.draw_label(canvas_obj, labels[index])
             canvas_obj.restoreState()
             index += 1

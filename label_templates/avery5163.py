@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import List, Tuple
+from typing import List
 
 import qrcode
 from reportlab.lib.pagesizes import letter
@@ -13,14 +13,15 @@ from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
 from label_content import LabelContent
+from .types import LabelGeometry
 from .utils import shrink_fit, wrap_text_to_width
 
 PAGE_SIZE = letter
 
 LABEL_W = 4.00 * inch
 LABEL_H = 2.00 * inch
-
-QR_SIZE = LABEL_H * 0.75
+COL_1_W = 1.5 * inch
+COL_2_W = LABEL_W - COL_1_W
 
 COLS = 2
 ROWS = 5
@@ -38,19 +39,22 @@ OFFSET_Y = 0.00 * inch
 
 LABEL_PADDING = 0.1 * inch
 TEXT_BOTTOM_PAD = 0.06 * inch
+COL1_TITLE_MAX_SIZE = 22
+
+QR_SIZE = COL_1_W - 2 * LABEL_PADDING
 
 _FONTS = build_font_config(
-    family="Inter Tight",
-    title_spec=FontSpec(weight=700, size=22),
-    content_spec=FontSpec(weight=600, size=20),
+    family="Inter",
+    title_spec=FontSpec(weight=500, size=22),
+    content_spec=FontSpec(weight=600, size=24),
     label_spec=FontSpec(weight=500, size=12),
 )
 
 
-def get_label_grid() -> List[Tuple[float, float, float, float]]:
+def get_label_grid() -> List[LabelGeometry]:
     """Return rectangles for each label on the page."""
 
-    grid: List[Tuple[float, float, float, float]] = []
+    grid: List[LabelGeometry] = []
     _, page_height = PAGE_SIZE
 
     for row in range(ROWS):
@@ -65,17 +69,35 @@ def get_label_grid() -> List[Tuple[float, float, float, float]]:
         for col in range(COLS):
             left = MARGIN_LEFT + col * (LABEL_W + H_GAP) + OFFSET_X
             right = left + LABEL_W
-            grid.append((left, bottom, right, top))
+            grid.append(LabelGeometry(left, bottom, right, top))
     return grid
 
 
-def _draw_qr_image(canvas_obj: canvas.Canvas, url: str):
-    qr_size = LABEL_H * 0.75 - 2 * LABEL_PADDING
-    qr_bottom = LABEL_PADDING
+def _render_col_1(canvas_obj: canvas.Canvas, content: LabelContent):
+    qr_bottom = LABEL_H - COL_1_W + LABEL_PADDING
+    qr_size = COL_1_W - 2 * LABEL_PADDING
+
+    title = content.title.strip() or "N/A"
+    text_width = COL_1_W - 2 * LABEL_PADDING
+    title_max = _FONTS.title.size
+    title_min = max(title_max * 0.5, 8.0)
+    title_size = shrink_fit(
+        title,
+        text_width,
+        max_font=title_max,
+        min_font=title_min,
+        font_name=_FONTS.title.font_name,
+    )
+    center_x = COL_1_W / 2.0
+    canvas_obj.setFont(_FONTS.title.font_name, title_size)
+    canvas_obj.drawCentredString(center_x, TEXT_BOTTOM_PAD, title)
+
+    title_top = TEXT_BOTTOM_PAD + title_size
+    qr_size = COL_1_W - 2 * LABEL_PADDING
 
     buffer = BytesIO()
     qr = qrcode.QRCode(border=0)
-    qr.add_data(url)
+    qr.add_data(content.url)
     qr_img = qr.make_image()
     qr_img.save(buffer, kind="PNG")
     buffer.seek(0)
@@ -83,7 +105,7 @@ def _draw_qr_image(canvas_obj: canvas.Canvas, url: str):
     canvas_obj.drawImage(
         ImageReader(buffer),
         LABEL_PADDING,
-        qr_bottom,
+        title_top,
         width=qr_size,
         height=qr_size,
         preserveAspectRatio=True,
@@ -91,7 +113,7 @@ def _draw_qr_image(canvas_obj: canvas.Canvas, url: str):
     )
 
 
-def _render_label_text(
+def _render_col_2(
     canvas_obj: canvas.Canvas,
     content: LabelContent,
 ) -> None:
@@ -101,59 +123,30 @@ def _render_label_text(
     canvas_obj.saveState()
     canvas_obj.setLineWidth(0.5)
 
-    title_row_y = LABEL_H * 3 / 4
-    content_row_y = LABEL_H / 2
-    info_row_y = LABEL_H / 4
+    content_row_y = LABEL_H * 3 / 4
+    info_row_y = LABEL_H / 2
 
-    canvas_obj.line(left, 0, left, title_row_y)
-    canvas_obj.line(0, title_row_y, LABEL_W, title_row_y)
-    canvas_obj.line(left, content_row_y, LABEL_W, content_row_y)
-    canvas_obj.line(left, info_row_y, LABEL_W, info_row_y)
+    canvas_obj.line(COL_1_W, 0, COL_1_W, LABEL_H)
+    canvas_obj.line(COL_1_W, content_row_y, LABEL_W, content_row_y)
     canvas_obj.restoreState()
 
-    left_column_width = left
-    if left_column_width > LABEL_PADDING:
-        label_x = left_column_width / 2.0
-        canvas_obj.setFont(_FONTS.label.font_name, _FONTS.label.size)
-        heading_positions = [
-            ("Title", (LABEL_H + title_row_y) / 2.0),
-            ("Content", (title_row_y + content_row_y) / 2.0),
-            ("Info", (content_row_y) / 2.0),
-        ]
-        for text, y in heading_positions:
-            canvas_obj.drawCentredString(label_x, y, text)
+    text_start_x = COL_1_W + LABEL_PADDING
+    text_max_width = COL_2_W - 2 * LABEL_PADDING
 
-    text_start_x = max(left + LABEL_PADDING, LABEL_PADDING)
-    text_max_width = max(width - LABEL_PADDING, 0.0)
-
-    title = content.title.strip() or "Unnamed"
-    title_max = _FONTS.title.size
-    title_min = max(title_max * 0.5, 8.0)
-    title_size = shrink_fit(
-        title,
-        text_max_width,
-        max_font=title_max,
-        min_font=title_min,
-        font_name=_FONTS.title.font_name,
-    )
-    title_y = title_row_y + TEXT_BOTTOM_PAD
-    canvas_obj.setFont(_FONTS.title.font_name, title_size)
-    canvas_obj.drawString(text_start_x, title_y, title)
-
-    body_text = content.content.strip()
-    if body_text:
-        body_max = _FONTS.content.size
-        body_min = max(body_max * 0.5, 6.0)
-        body_size = shrink_fit(
-            body_text,
+    content_text = content.content.strip()
+    if content_text:
+        content_max = _FONTS.content.size
+        content_min = max(content_max * 0.5, 6.0)
+        content_size = shrink_fit(
+            content_text,
             text_max_width,
-            max_font=body_max,
-            min_font=body_min,
+            max_font=content_max,
+            min_font=content_min,
             font_name=_FONTS.content.font_name,
         )
         body_y = content_row_y + TEXT_BOTTOM_PAD
-        canvas_obj.setFont(_FONTS.content.font_name, body_size)
-        canvas_obj.drawString(text_start_x, body_y, body_text)
+        canvas_obj.setFont(_FONTS.content.font_name, content_size)
+        canvas_obj.drawString(text_start_x, body_y, content_text)
 
     info_lines: List[str] = []
 
@@ -170,9 +163,9 @@ def _render_label_text(
             )
         )
 
-    append_info("Path: ", content.path_text)
+    append_info("Loc: ", content.path_text)
     append_info("Tags: ", content.categories_text)
-    append_info("URL: ", content.url)
+    append_info("Notes: ", "")
 
     if info_lines:
         info_y = info_row_y - TEXT_BOTTOM_PAD - _FONTS.label.size
@@ -189,5 +182,5 @@ def draw_label(
     content: LabelContent,
 ) -> None:
     qr_size = LABEL_H * 0.75 - 2 * LABEL_PADDING
-    _draw_qr_image(canvas_obj, content.url)
-    _render_label_text(canvas_obj, content)
+    _render_col_1(canvas_obj, content)
+    _render_col_2(canvas_obj, content)
