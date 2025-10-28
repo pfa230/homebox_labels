@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+import re
 from typing import Dict, Optional, Tuple, Union
 
 from fontTools.ttLib import TTFont as VariableTTFont
@@ -118,10 +119,38 @@ class VariableFontManager:
     def _instantiate(self, weight: float) -> BytesIO:
         font = VariableTTFont(BytesIO(self._font_bytes))
         instancer.instantiateVariableFont(font, {"wght": weight}, inplace=True)
+        self._ensure_unique_ps_name(font, weight)
         buffer = BytesIO()
         font.save(buffer)
         buffer.seek(0)
         return buffer
+
+    def _ensure_unique_ps_name(self, font: VariableTTFont, weight: float) -> None:
+        """Force a distinct PostScript name if instancer did not change it."""
+        nm = font["name"]
+        current_ps = nm.getName(6, 3, 1, 0x409) or nm.getName(6, 1, 0, 0)
+        target_ps = self._safe_ps_name(
+            f"{self.family.replace(' ', '')}-W{int(round(weight))}")
+        if not current_ps or current_ps.toUnicode() == target_ps:
+            return  # already unique or not resolvable
+
+        # set PS name and related records for Win/Mac
+        for plat, enc, lang in ((3, 1, 0x409), (1, 0, 0)):
+            # PostScript Name
+            nm.setName(target_ps, 6, plat, enc, lang)
+            nm.setName(f"{self.family} {int(round(weight))}",
+                       4, plat, enc, lang)  # Full Name
+            nm.setName(self.family, 1, plat, enc,
+                       lang)                       # Family
+            nm.setName(str(int(round(weight))), 2, plat,
+                       enc, lang)           # Subfamily
+            # Typographic Family
+            nm.setName(self.family, 16, plat, enc, lang)
+            nm.setName(str(int(round(weight))), 17, plat, enc,
+                       lang)          # Typographic Subfamily
+
+    def _safe_ps_name(self, s: str) -> str:
+        return re.sub(r"[^A-Za-z0-9-]", "", s)[:63]
 
 
 class FontRegistry:

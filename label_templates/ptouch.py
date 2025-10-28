@@ -33,7 +33,7 @@ _FONTS = build_font_config(
     family="Inter",
     title_spec=FontSpec(weight=600, size=FONT_SIZE_TITLE),
     content_spec=FontSpec(weight=400, size=MAX_FONT_SIZE_CONTENT),
-    label_spec=FontSpec(weight=500, size=12),
+    label_spec=FontSpec(weight=400, size=12),
 )
 
 
