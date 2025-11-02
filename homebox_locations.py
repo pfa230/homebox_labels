@@ -84,21 +84,6 @@ def split_name_content(name: str) -> Tuple[str, str]:
     return head, tail.strip()
 
 
-def extract_categories(description: str) -> List[str]:
-    """Extract comma-separated categories from the free-form description."""
-
-    for line in (description or "").splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("category:"):
-            categories = stripped.split(":", 1)[1]
-            return [
-                item.strip()
-                for item in categories.split(",")
-                if item.strip()
-            ]
-    return []
-
-
 def build_ui_url(base_ui: str, loc_id: str) -> str:
     """Construct the dashboard URL for a location."""
 
@@ -126,10 +111,11 @@ def collect_label_contents(
         if isinstance(loc_id := loc.get("id"), str)
     ]
     detail_map = api_manager.get_location_details(loc_ids)
+    labels_map = api_manager.get_location_item_labels(loc_ids)
 
     base_ui_clean = base_ui.rstrip("/")
     return [
-        _to_label_content(loc, detail_map, path_map, base_ui_clean)
+        _to_label_content(loc, detail_map, labels_map, path_map, base_ui_clean)
         for loc in filtered_locations
     ]
 
@@ -137,6 +123,7 @@ def collect_label_contents(
 def _to_label_content(
     location: Dict,
     detail_map: Dict[str, Dict],
+    labels_map: Dict[str, List[str]],
     path_map: Dict[str, List[str]],
     base_ui: str,
 ) -> LabelContent:
@@ -149,7 +136,8 @@ def _to_label_content(
         or location.get("description")
         or ""
     ).strip()
-    categories_text = ", ".join(extract_categories(description))
+    label_names = labels_map.get(loc_id, [])
+    labels_text = ", ".join(label_names)
 
     full_path = path_map.get(loc_id, [])
     trimmed_path = full_path[:-1] if len(full_path) > 1 else []
@@ -161,7 +149,8 @@ def _to_label_content(
         content=content,
         url=build_ui_url(base_ui, loc_id),
         path_text=path_text,
-        categories_text=categories_text,
+        labels_text=labels_text,
+        description_text=description,
     )
 
 

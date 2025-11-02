@@ -140,7 +140,7 @@ class Template(LabelTemplate):
         text_lines = [
             label.title.strip() or "",
             label.content.strip() or "",
-            label.categories_text.strip() or "",
+            label.labels_text.strip() or "",
         ]
 
         font_cycle = [

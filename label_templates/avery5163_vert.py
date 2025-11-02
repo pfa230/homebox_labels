@@ -11,7 +11,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
-from reportlab.pdfbase.pdfmetrics import getAscent, getDescent
+from reportlab.pdfbase.pdfmetrics import getAscent, getDescent, stringWidth
 
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
@@ -45,6 +45,7 @@ _FONTS = build_font_config(  # tuned for vertical stack
     content_spec=FontSpec(weight=600, size=26),
     label_spec=FontSpec(weight=500, size=12),
 )
+LABEL_BOLD_FONT = _FONTS.content.font_name
 
 
 class Template(LabelTemplate):
@@ -209,26 +210,105 @@ class Template(LabelTemplate):
         width = LABEL_H
 
         info_cursor = height - SECTION_GAP
-        info_lines: list[str] = []
+        available_width = width - 2 * LABEL_PADDING
 
-        info_lines.append(f"Loc: {content.path_text.strip()}")
-        info_lines.append(f"Tags: {content.categories_text.strip()}")
-
-        for line in info_lines:
-            chosen_lines, chosen_size = wrap_text_to_width_multiline(
-                text=line,
-                font_name=_FONTS.label.font_name,
-                font_size=_FONTS.label.size,
-                max_width_pt=width - 2 * LABEL_PADDING,
-                max_lines=2,
-                min_font_size=max(_FONTS.label.size * 0.5, 8.0),
-                step=0.5,
+        labels_text = content.labels_text.strip()
+        if labels_text:
+            info_cursor = self._draw_text_block(
+                canvas_obj,
+                labels_text,
+                info_cursor,
+                LABEL_PADDING,
+                available_width,
+                LABEL_BOLD_FONT,
             )
+            info_cursor -= SECTION_GAP / 2.0
 
-            if chosen_lines:
-                canvas_obj.setFont(_FONTS.label.font_name, chosen_size)
-                for chosen_line in chosen_lines:
-                    info_cursor -= chosen_size
-                    canvas_obj.drawString(
-                        LABEL_PADDING, info_cursor, chosen_line)
-            info_cursor -= SECTION_GAP
+        if info_cursor >= _FONTS.label.size:
+            description_text = content.description_text.strip()
+            if description_text:
+                info_cursor = self._draw_text_block(
+                    canvas_obj,
+                    description_text,
+                    info_cursor,
+                    LABEL_PADDING,
+                    available_width,
+                    _FONTS.label.font_name,
+                )
+
+    def _draw_text_block(
+        self,
+        canvas_obj: canvas.Canvas,
+        text: str,
+        cursor: float,
+        left: float,
+        max_width: float,
+        font_name: str,
+    ) -> float:
+        text = text.strip()
+        if not text:
+            return cursor
+
+        font_size = _FONTS.label.size
+        lines = list(
+            wrap_text_to_width(
+                text=text,
+                font_name=font_name,
+                font_size=font_size,
+                max_width_pt=max_width,
+            )
+        )
+
+        if not lines:
+            return cursor
+
+        normalized = " ".join(text.split())
+        reconstructed = " ".join(lines)
+        truncated_wrap = reconstructed.strip() != normalized.strip()
+
+        line_gap = LINE_GAP
+        probe_baseline = cursor
+        visible_lines: list[str] = []
+        for idx, line in enumerate(lines):
+            next_baseline = probe_baseline - font_size
+            if next_baseline < font_size:
+                break
+            visible_lines.append(line)
+            probe_baseline = next_baseline
+            if idx < len(lines) - 1:
+                probe_baseline -= line_gap
+
+        if not visible_lines:
+            return cursor
+
+        truncated_space = len(visible_lines) < len(lines)
+        truncated = truncated_wrap or truncated_space
+
+        if truncated:
+            ellipsis = "…"
+            ell_width = stringWidth(ellipsis, font_name, font_size)
+            if ell_width <= max_width:
+                last = visible_lines[-1].rstrip()
+                while last and stringWidth(last + ellipsis, font_name, font_size) > max_width:
+                    last = last[:-1]
+                if last:
+                    visible_lines[-1] = last + ellipsis
+                else:
+                    visible_lines[-1] = (
+                        ellipsis if ell_width <= max_width else visible_lines[-1]
+                    )
+
+        draw_baseline = cursor
+        for idx, line in enumerate(visible_lines):
+            draw_baseline -= font_size
+            if draw_baseline < font_size:
+                break
+            canvas_obj.setFont(font_name, font_size)
+            canvas_obj.drawString(left, draw_baseline, line.rstrip())
+            if idx < len(visible_lines) - 1:
+                draw_baseline -= line_gap
+
+        baseline = draw_baseline
+
+        baseline -= SECTION_GAP / 2.0
+        return baseline

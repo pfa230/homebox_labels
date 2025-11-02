@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Set
 
 from homebox_client import ApiClient, Configuration
 from homebox_client.api.authentication_api import AuthenticationApi
 from homebox_client.api.locations_api import LocationsApi
+from homebox_client.api.items_api import ItemsApi
 
 # Default timeout (in seconds) for Homebox API requests.
 DEFAULT_TIMEOUT = 30
@@ -15,7 +16,7 @@ DEFAULT_TIMEOUT = 30
 
 @dataclass
 class HomeboxApiManager:
-    """Thin wrapper around Homebox API endpoints used by the label generator."""
+    """Homebox label generator API helper."""
 
     base_url: str
     username: str
@@ -32,6 +33,7 @@ class HomeboxApiManager:
         self.base_url = base_clean
         self._api_client = self._create_authenticated_client(base_clean)
         self._locations_api = LocationsApi(self._api_client)
+        self._items_api = ItemsApi(self._api_client)
 
     @property
     def api_client(self) -> ApiClient:
@@ -73,6 +75,55 @@ class HomeboxApiManager:
                 continue
             details[loc_id] = self.get_location_detail(loc_id)
         return details
+
+    def get_location_item_labels(
+        self,
+        loc_ids: Iterable[str],
+        page_size: int = 100,
+    ) -> Dict[str, List[str]]:
+        """Collect sorted label names for every location in loc_ids."""
+
+        labels_map: Dict[str, List[str]] = {}
+        for loc_id in loc_ids:
+            if not loc_id:
+                continue
+            labels_map[loc_id] = self._fetch_labels_for_location(
+                loc_id,
+                page_size=page_size,
+            )
+        return labels_map
+
+    def _fetch_labels_for_location(
+        self,
+        loc_id: str,
+        page_size: int = 100,
+    ) -> List[str]:
+        """Return sorted unique label names for all items in a location."""
+
+        collected: Set[str] = set()
+        page = 1
+        while True:
+            response = self._items_api.v1_items_get(
+                page=page,
+                page_size=page_size,
+                locations=[loc_id],
+                _request_timeout=self.timeout,
+            )
+            items = response.items or []
+            for item in items:
+                for label in getattr(item, "labels", None) or []:
+                    name = (label.name or "").strip()
+                    if name:
+                        collected.add(name)
+
+            total = response.total or 0
+            if not items or len(items) < page_size:
+                break
+            if total and page * page_size >= total:
+                break
+            page += 1
+
+        return sorted(collected, key=str.casefold)
 
     def _create_authenticated_client(self, base_url: str) -> ApiClient:
         """Authenticate against the Homebox API and return a ready client."""

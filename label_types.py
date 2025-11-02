@@ -11,7 +11,8 @@ class LabelContent:
     content: str
     url: str
     path_text: str = ""
-    categories_text: str = ""
+    labels_text: str = ""
+    description_text: str = ""
 
 
 @dataclass(frozen=True)
