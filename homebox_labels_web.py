@@ -6,7 +6,8 @@ import argparse
 import os
 from dataclasses import replace
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+import zipfile
 from typing import List
 
 from dotenv import load_dotenv
@@ -284,33 +285,79 @@ def run_web_app(
                 updated_label = label
             updated_labels.append(updated_label)
 
-        tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
-        tmp_file.close()
-
         skip_labels = int(request.form.get("skip", "0") or "0")
 
-        try:
-            render(tmp_file.name, template, updated_labels, skip_labels)
-        except Exception as exc:  # pragma: no cover
-            os.remove(tmp_file.name)
-            return redirect(url_for("locations_index", error="generation", message=str(exc)))
-
-        download_name = "homebox_labels.pdf"
-
-        @after_this_request
-        def cleanup(response):
+        # Branch on template output type: PDF vs PNG bundle
+        if template.page_size:
+            tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
+            tmp_file.close()
             try:
+                render(tmp_file.name, template, updated_labels, skip_labels)
+            except Exception as exc:  # pragma: no cover
                 os.remove(tmp_file.name)
-            except OSError:
-                pass
-            return response
+                return redirect(url_for("locations_index", error="generation", message=str(exc)))
 
-        return send_file(
-            tmp_file.name,
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name=download_name,
-        )
+            download_name = "homebox_labels.pdf"
+
+            @after_this_request
+            def cleanup_pdf(response):
+                try:
+                    os.remove(tmp_file.name)
+                except OSError:
+                    pass
+                return response
+
+            return send_file(
+                tmp_file.name,
+                mimetype="application/pdf",
+                as_attachment=True,
+                download_name=download_name,
+            )
+        else:
+            # PNG outputs: render to a temp dir, zip them, and return the zip
+            tmp_dir = TemporaryDirectory()
+            prefix = str(Path(tmp_dir.name) / "homebox_labels")
+            try:
+                render(prefix, template, updated_labels, skip_labels)
+            except Exception as exc:  # pragma: no cover
+                tmp_dir.cleanup()
+                return redirect(url_for("locations_index", error="generation", message=str(exc)))
+
+            png_files = sorted(Path(tmp_dir.name).glob("homebox_labels_*.png"))
+            if not png_files:
+                tmp_dir.cleanup()
+                return redirect(
+                    url_for(
+                        "locations_index",
+                        error="generation",
+                        message="No PNG files were generated.",
+                    )
+                )
+
+            zip_tmp = NamedTemporaryFile(delete=False, suffix=".zip")
+            zip_tmp.close()
+            with zipfile.ZipFile(zip_tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for f in png_files:
+                    zf.write(f, arcname=f.name)
+
+            @after_this_request
+            def cleanup_zip(response):
+                try:
+                    os.remove(zip_tmp.name)
+                except OSError:
+                    pass
+                try:
+                    tmp_dir.cleanup()
+                except Exception:
+                    pass
+                return response
+
+            return send_file(
+                zip_tmp.name,
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name="homebox_labels_png.zip",
+            )
 
     # Asset routes
     @app.route("/assets", methods=["GET"])
@@ -493,33 +540,75 @@ def run_web_app(
                 updated_label = label
             updated_labels.append(updated_label)
 
-        tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
-        tmp_file.close()
-
         skip_labels = int(request.form.get("skip", "0") or "0")
 
-        try:
-            render(tmp_file.name, template, updated_labels, skip_labels)
-        except Exception as exc:  # pragma: no cover
-            os.remove(tmp_file.name)
-            return redirect(url_for("assets_index", error="generation", message=str(exc)))
-
-        download_name = "homebox_labels.pdf"
-
-        @after_this_request
-        def cleanup(response):
+        if template.page_size:
+            tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
+            tmp_file.close()
             try:
+                render(tmp_file.name, template, updated_labels, skip_labels)
+            except Exception as exc:  # pragma: no cover
                 os.remove(tmp_file.name)
-            except OSError:
-                pass
-            return response
+                return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
-        return send_file(
-            tmp_file.name,
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name=download_name,
-        )
+            @after_this_request
+            def cleanup_pdf(response):
+                try:
+                    os.remove(tmp_file.name)
+                except OSError:
+                    pass
+                return response
+
+            return send_file(
+                tmp_file.name,
+                mimetype="application/pdf",
+                as_attachment=True,
+                download_name="homebox_labels.pdf",
+            )
+        else:
+            tmp_dir = TemporaryDirectory()
+            prefix = str(Path(tmp_dir.name) / "homebox_labels")
+            try:
+                render(prefix, template, updated_labels, skip_labels)
+            except Exception as exc:  # pragma: no cover
+                tmp_dir.cleanup()
+                return redirect(url_for("assets_index", error="generation", message=str(exc)))
+
+            png_files = sorted(Path(tmp_dir.name).glob("homebox_labels_*.png"))
+            if not png_files:
+                tmp_dir.cleanup()
+                return redirect(
+                    url_for(
+                        "assets_index",
+                        error="generation",
+                        message="No PNG files were generated.",
+                    )
+                )
+
+            zip_tmp = NamedTemporaryFile(delete=False, suffix=".zip")
+            zip_tmp.close()
+            with zipfile.ZipFile(zip_tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for f in png_files:
+                    zf.write(f, arcname=f.name)
+
+            @after_this_request
+            def cleanup_zip(response):
+                try:
+                    os.remove(zip_tmp.name)
+                except OSError:
+                    pass
+                try:
+                    tmp_dir.cleanup()
+                except Exception:
+                    pass
+                return response
+
+            return send_file(
+                zip_tmp.name,
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name="homebox_labels_png.zip",
+            )
 
     app.run(host=host, port=port, debug=False, use_reloader=False)
 
