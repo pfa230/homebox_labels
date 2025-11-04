@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 from label_types import LabelContent, LabelGeometry
+
+
+@dataclass(frozen=True)
+class TemplateOption:
+    """Represents a configurable option exposed by a label template."""
+
+    name: str
+    possible_values: List[str]
 
 
 class LabelTemplate(ABC):
@@ -41,3 +50,13 @@ class LabelTemplate(ABC):
         content: LabelContent,
     ) -> bytes:
         """Return PNG bytes for ``content`` rendered in the next slot."""
+
+    def available_options(self) -> List[TemplateOption]:
+        """Return user-tunable options supported by the template."""
+
+        return []
+
+    def apply_options(self, selections: Dict[str, str]) -> None:
+        """Apply user-selected template options."""
+
+        return None

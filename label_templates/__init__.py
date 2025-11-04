@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from importlib import import_module
 
+from typing import Dict, Optional
+
 from .base import LabelTemplate
 
 _TEMPLATE_MAP = {
@@ -13,7 +15,10 @@ _TEMPLATE_MAP = {
 }
 
 
-def get_template(name: str) -> LabelTemplate:
+def get_template(
+    name: str,
+    options: Optional[Dict[str, str]] = None,
+) -> LabelTemplate:
     """Instantiate the template implementation for ``name``."""
 
     key = name.lower()
@@ -36,4 +41,7 @@ def get_template(name: str) -> LabelTemplate:
             f"Template '{name}' does not export a valid Template class"
         )
 
-    return template_cls()
+    template = template_cls()
+    if options:
+        template.apply_options(options)
+    return template

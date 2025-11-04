@@ -14,6 +14,7 @@ class LabelContent:
     path_text: str = ""
     labels_text: str = ""
     description_text: str = ""
+    template_options: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)

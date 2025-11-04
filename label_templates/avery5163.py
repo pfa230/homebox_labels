@@ -14,7 +14,7 @@ from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
-from .base import LabelTemplate
+from .base import LabelTemplate, TemplateOption
 from .utils import shrink_fit, wrap_text_to_width
 
 PAGE_SIZE = letter
@@ -54,7 +54,7 @@ LABEL_BOLD_FONT = _FONTS.content.font_name
 LABEL_REG_FONT = _FONTS.label.font_name
 
 
-class Template(LabelTemplate):
+class _HorizontalTemplate(LabelTemplate):
     """Stateful template for Avery 5163 sheets."""
 
     def __init__(self) -> None:
@@ -275,3 +275,67 @@ class Template(LabelTemplate):
         if visible_lines:
             current -= line_gap
         return current
+
+
+class Template(LabelTemplate):
+    """Avery 5163 template supporting per-label orientation options."""
+
+    _DEFAULT_ORIENTATION = "horizontal"
+
+    def __init__(self) -> None:
+        self._layout = _HorizontalTemplate()
+        from .avery5163_vert import Template as VerticalTemplate
+
+        self._vertical_renderer = VerticalTemplate()
+        self._default_orientation = self._DEFAULT_ORIENTATION
+        super().__init__()
+
+    def available_options(self) -> list[TemplateOption]:  # type: ignore[override]
+        return [
+            TemplateOption(
+                name="orientation",
+                possible_values=["horizontal", "vertical"],
+            )
+        ]
+
+    def apply_options(self, selections: dict[str, str]) -> None:  # type: ignore[override]
+        orientation = (selections.get("orientation") or self._DEFAULT_ORIENTATION).lower()
+        if orientation not in {"horizontal", "vertical"}:
+            raise ValueError(
+                "Invalid orientation option. Choose 'horizontal' or 'vertical'."
+            )
+        self._default_orientation = orientation
+
+    @property
+    def page_size(self):  # type: ignore[override]
+        return self._layout.page_size
+
+    @property
+    def raster_dpi(self) -> int:  # type: ignore[override]
+        return self._layout.raster_dpi
+
+    def reset(self) -> None:  # type: ignore[override]
+        self._layout.reset()
+
+    def next_label_geometry(self) -> LabelGeometry:
+        return self._layout.next_label_geometry()
+
+    def render_label(self, content: LabelContent) -> bytes:  # type: ignore[override]
+        orientation = self._resolve_orientation(content)
+        if orientation == "vertical":
+            self._vertical_renderer.reset()
+            return self._vertical_renderer.render_label(content)
+        return self._layout.render_label(content)
+
+    def consume_page_break(self) -> bool:
+        consume = getattr(self._layout, "consume_page_break", None)
+        if consume:
+            return consume()
+        return False
+
+    def _resolve_orientation(self, content: LabelContent) -> str:
+        options = content.template_options or {}
+        orientation = (options.get("orientation") or self._default_orientation).lower()
+        if orientation not in {"horizontal", "vertical"}:
+            orientation = self._default_orientation
+        return orientation

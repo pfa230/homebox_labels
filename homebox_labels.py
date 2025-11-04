@@ -94,19 +94,28 @@ def collect_label_contents(
     api_manager: HomeboxApiManager,
     base_ui: str,
     name_pattern: Optional[str],
+    default_template_options: Optional[Dict[str, str]] = None,
 ) -> List[LabelContent]:
     """Fetch locations and transform them into label-ready payloads."""
 
     locations = api_manager.list_locations()
     filtered_locations = _filter_locations_by_name(locations, name_pattern)
 
-    return _build_label_contents(filtered_locations, api_manager, base_ui)
+    return _build_label_contents(
+        filtered_locations,
+        api_manager,
+        base_ui,
+        default_template_options=default_template_options,
+    )
 
 
 def collect_label_contents_by_ids(
     api_manager: HomeboxApiManager,
     base_ui: str,
     location_ids: Sequence[str],
+    *,
+    default_template_options: Optional[Dict[str, str]] = None,
+    template_overrides: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> List[LabelContent]:
     """Return label payloads for the specified location ids."""
 
@@ -124,13 +133,22 @@ def collect_label_contents_by_ids(
         for loc_id in location_ids
         if loc_id in by_id
     ]
-    return _build_label_contents(ordered_locations, api_manager, base_ui)
+    return _build_label_contents(
+        ordered_locations,
+        api_manager,
+        base_ui,
+        default_template_options=default_template_options,
+        template_overrides=template_overrides,
+    )
 
 
 def _build_label_contents(
     locations: Sequence[Dict],
     api_manager: HomeboxApiManager,
     base_ui: str,
+    *,
+    default_template_options: Optional[Dict[str, str]] = None,
+    template_overrides: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> List[LabelContent]:
     valid_locations: List[Dict] = []
     loc_ids: List[str] = []
@@ -149,10 +167,36 @@ def _build_label_contents(
     labels_map = api_manager.get_location_item_labels(loc_ids)
 
     base_ui_clean = (base_ui or "").rstrip("/")
+    overrides = template_overrides or {}
+    defaults = default_template_options or {}
     return [
-        _to_label_content(loc, detail_map, labels_map, path_map, base_ui_clean)
+        _to_label_content(
+            loc,
+            detail_map,
+            labels_map,
+            path_map,
+            base_ui_clean,
+            overrides,
+            defaults,
+        )
         for loc in valid_locations
     ]
+
+
+def _parse_template_options(option_pairs: Sequence[str]) -> Dict[str, str]:
+    parsed: Dict[str, str] = {}
+    for pair in option_pairs:
+        if "=" not in pair:
+            raise SystemExit(
+                f"Invalid --template-option '{pair}'. Expected format NAME=VALUE."
+            )
+        key, value = pair.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if not key:
+            raise SystemExit("Template option name cannot be empty.")
+        parsed[key] = value
+    return parsed
 
 
 def _to_label_content(
@@ -161,6 +205,8 @@ def _to_label_content(
     labels_map: Dict[str, List[str]],
     path_map: Dict[str, List[str]],
     base_ui: str,
+    template_overrides: Dict[str, Dict[str, str]],
+    default_template_options: Dict[str, str],
 ) -> LabelContent:
     """Convert a single location payload into the printable label structure."""
 
@@ -179,6 +225,10 @@ def _to_label_content(
     path_text = "->".join(trimmed_path)
 
     title, content = split_name_content(location.get("name") or "")
+    options = template_overrides.get(loc_id)
+    if options is None and default_template_options:
+        options = default_template_options.copy()
+
     return LabelContent(
         title=title,
         content=content,
@@ -187,6 +237,7 @@ def _to_label_content(
         path_text=path_text,
         labels_text=labels_text,
         description_text=description,
+        template_options=options,
     )
 
 
@@ -194,6 +245,7 @@ def run_web_app(
     api_manager: HomeboxApiManager,
     base_ui: str,
     template_name: str,
+    template_options: Dict[str, str],
     skip: int,
     draw_outline: bool,
     host: str,
@@ -213,11 +265,14 @@ def run_web_app(
         url_for,
     )
 
-    base_ui = base_ui or ""
-
     template_dir = Path(__file__).resolve().parent / "templates"
     app = Flask(__name__, template_folder=str(template_dir))
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "homebox-labels-ui")
+
+    base_ui = base_ui or ""
+
+    option_specs = get_template(template_name).available_options()
+    selection_overrides: Dict[str, Dict[str, str]] = {}
 
     def _truncate(text: str, limit: int = 120) -> str:
         text = (text or "").strip()
@@ -236,7 +291,12 @@ def run_web_app(
     @app.route("/", methods=["GET"])
     def index() -> str:
         try:
-            contents = collect_label_contents(api_manager, base_ui, None)
+            contents = collect_label_contents(
+                api_manager,
+                base_ui,
+                None,
+                default_template_options=template_options,
+            )
         except Exception as exc:  # pragma: no cover - best effort message
             return f"Failed to load locations: {exc}", 500
 
@@ -246,6 +306,11 @@ def run_web_app(
                 continue
             display_name = " ".join(filter(None, [item.title, item.content])).strip()
             display_name = display_name or "Unnamed"
+            override = selection_overrides.get(item.location_id)
+            if override is not None:
+                current_options = override.copy()
+            else:
+                current_options = (template_options or {}).copy()
             rows.append(
                 {
                     "id": item.location_id,
@@ -253,6 +318,7 @@ def run_web_app(
                     "path": _friendly_path(item.path_text),
                     "labels": _truncate(item.labels_text, 80),
                     "description": _truncate(item.description_text, 160),
+                    "selected_options": current_options,
                 }
             )
 
@@ -273,16 +339,41 @@ def run_web_app(
                 or "Unable to generate labels for the selected locations."
             )
 
-        return render_template("index.html", locations=rows, error=error_message)
+        return render_template(
+            "index.html",
+            locations=rows,
+            error=error_message,
+            template_options=option_specs,
+            selected_options=template_options,
+        )
 
     @app.route("/generate", methods=["POST"])
     def generate() -> str:
+        nonlocal template_options
         selected_ids = request.form.getlist("location_id")
         if not selected_ids:
             return redirect(url_for("index", error="no-selection"))
 
+        option_values = template_options.copy()
+        per_label_options: Dict[str, Dict[str, str]] = {}
+        for loc_id in selected_ids:
+            overrides: Dict[str, str] = {}
+            for option in option_specs:
+                field = f"option_{option.name}_{loc_id}"
+                submitted = request.form.get(field)
+                if submitted:
+                    overrides[option.name] = submitted
+            if overrides:
+                per_label_options[loc_id] = overrides
+
         try:
-            labels = collect_label_contents_by_ids(api_manager, base_ui, selected_ids)
+            labels = collect_label_contents_by_ids(
+                api_manager,
+                base_ui,
+                selected_ids,
+                default_template_options=option_values,
+                template_overrides=per_label_options,
+            )
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("index", error="generation", message=str(exc)))
 
@@ -295,7 +386,9 @@ def run_web_app(
                 )
             )
 
-        template = get_template(template_name)
+        template = get_template(template_name, option_values)
+        template_options = option_values
+        selection_overrides.update(per_label_options)
         tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
         tmp_file.close()
 
@@ -381,6 +474,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Draw outline around every label",
     )
     parser.add_argument(
+        "--template-option",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help=(
+            "Provide template customization option (repeatable). For example: "
+            "--template-option orientation=vertical"
+        ),
+    )
+    parser.add_argument(
         "--web",
         action="store_true",
         help="Start a local web UI for selecting locations before generating labels.",
@@ -400,6 +503,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     template_name = args.template
+    template_options = _parse_template_options(args.template_option)
 
     api_manager = HomeboxApiManager(
         base_url=args.base,
@@ -412,6 +516,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             api_manager=api_manager,
             base_ui=args.base or "",
             template_name=template_name,
+            template_options=template_options,
             skip=args.skip,
             draw_outline=args.draw_outline,
             host=args.web_host,
@@ -419,9 +524,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 0
 
-    template = get_template(template_name)
+    template = get_template(template_name, template_options)
 
-    labels = collect_label_contents(api_manager, args.base, args.name_pattern)
+    labels = collect_label_contents(
+        api_manager,
+        args.base,
+        args.name_pattern,
+        default_template_options=template_options,
+    )
     message = render(
         args.output,
         template,

@@ -15,7 +15,7 @@ from reportlab.pdfbase.pdfmetrics import getAscent, getDescent, stringWidth
 
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
-from .base import LabelTemplate
+from .base import LabelTemplate, TemplateOption
 from .utils import shrink_fit, wrap_text_to_width
 from label_templates.utils import wrap_text_to_width_multiline
 
@@ -54,6 +54,9 @@ class Template(LabelTemplate):
     def __init__(self) -> None:
         self._slot_index = 0
         super().__init__()
+
+    def available_options(self) -> list[TemplateOption]:  # type: ignore[override]
+        return []
 
     @property
     def page_size(self):  # type: ignore[override]

@@ -13,7 +13,7 @@ from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
-from .base import LabelTemplate
+from .base import LabelTemplate, TemplateOption
 from .utils import shrink_fit, wrap_text_to_width_multiline
 
 LABEL_HEIGHT = 18 * mm
@@ -42,6 +42,9 @@ class Template(LabelTemplate):
 
     def __init__(self) -> None:
         super().__init__()
+
+    def available_options(self) -> list[TemplateOption]:  # type: ignore[override]
+        return []
 
     @property
     def raster_dpi(self) -> int:  # type: ignore[override]

@@ -23,15 +23,15 @@ def render(
 
     template.reset()
     if template.page_size:
-        return render_pdf(output_path, template, labels, skip, draw_outline)
+        return _render_pdf(output_path, template, labels, skip, draw_outline)
     if draw_outline:
         raise SystemExit("--draw-outline is not compatible with non-PDF templates.")
     if skip > 0:
         raise SystemExit("--skip is not compatible with non-PDF templates.")
-    return render_png(output_path, template, labels)
+    return _render_png(output_path, template, labels)
 
 
-def render_png(
+def _render_png(
     output_path: str | None,
     template: LabelTemplate,
     labels: Sequence[LabelContent],
@@ -55,7 +55,7 @@ def render_png(
     return f"Wrote {len(labels)} PNG files with prefix '{output_path}_'."
 
 
-def render_pdf(
+def _render_pdf(
     output_path: str | None,
     template: LabelTemplate,
     labels: Sequence[LabelContent],
@@ -65,8 +65,6 @@ def render_pdf(
     """Render labels to a multi-page PDF."""
 
     output_path = output_path or "locations.pdf"
-
-    template.reset()
 
     canvas_obj = canvas.Canvas(output_path, pagesize=template.page_size)
 
