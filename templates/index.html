@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Homebox Label Generator</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/main.css') }}"
+    />
+    <script>
+      function toggleAll(state) {
+        const boxes = document.querySelectorAll('input[name="location_id"]');
+        boxes.forEach((cb) => {
+          cb.checked = state;
+        });
+      }
+      function invertSelection() {
+        const boxes = document.querySelectorAll('input[name="location_id"]');
+        boxes.forEach((cb) => {
+          cb.checked = !cb.checked;
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Homebox Label Generator</h1>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="{{ url_for('generate') }}">
+      <div class="controls">
+        <button type="submit" class="primary">Generate PDF</button>
+        <button type="button" class="secondary" onclick="toggleAll(true)">
+          Select All
+        </button>
+        <button type="button" class="secondary" onclick="toggleAll(false)">
+          Clear
+        </button>
+        <button type="button" class="secondary" onclick="invertSelection()">
+          Invert
+        </button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 3rem">Pick</th>
+            <th>Location</th>
+            <th style="width: 20%">Labels</th>
+            <th style="width: 30%">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for loc in locations %}
+            <tr>
+              <td>
+                <input type="checkbox" name="location_id" value="{{ loc.id }}" />
+              </td>
+              <td>
+                <div><strong>{{ loc.display_name }}</strong></div>
+                {% if loc.path %}
+                  <div class="path">{{ loc.path }}</div>
+                {% endif %}
+              </td>
+              <td>
+                {% if loc.labels %}
+                  <div class="meta">{{ loc.labels }}</div>
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              <td>
+                {% if loc.description %}
+                  {{ loc.description }}
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </form>
+  </body>
+</html>

@@ -4,17 +4,15 @@
 import argparse
 import os
 import re
-from io import BytesIO
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
-from reportlab.lib.utils import ImageReader
-from reportlab.pdfgen import canvas
 
 from homebox_api import HomeboxApiManager
+from label_generation import render
 from label_types import LabelContent
 from label_templates import get_template
-from label_templates.base import LabelTemplate
 
 
 def _filter_locations_by_name(
@@ -102,21 +100,58 @@ def collect_label_contents(
     locations = api_manager.list_locations()
     filtered_locations = _filter_locations_by_name(locations, name_pattern)
 
+    return _build_label_contents(filtered_locations, api_manager, base_ui)
+
+
+def collect_label_contents_by_ids(
+    api_manager: HomeboxApiManager,
+    base_ui: str,
+    location_ids: Sequence[str],
+) -> List[LabelContent]:
+    """Return label payloads for the specified location ids."""
+
+    if not location_ids:
+        return []
+
+    locations = api_manager.list_locations()
+    by_id = {
+        loc.get("id"): loc
+        for loc in locations
+        if isinstance(loc.get("id"), str)
+    }
+    ordered_locations = [
+        by_id[loc_id]
+        for loc_id in location_ids
+        if loc_id in by_id
+    ]
+    return _build_label_contents(ordered_locations, api_manager, base_ui)
+
+
+def _build_label_contents(
+    locations: Sequence[Dict],
+    api_manager: HomeboxApiManager,
+    base_ui: str,
+) -> List[LabelContent]:
+    valid_locations: List[Dict] = []
+    loc_ids: List[str] = []
+    for loc in locations:
+        loc_id = loc.get("id")
+        if isinstance(loc_id, str):
+            valid_locations.append(loc)
+            loc_ids.append(loc_id)
+
+    if not loc_ids:
+        return []
+
     tree = api_manager.get_location_tree()
     path_map = build_location_paths(tree)
-
-    loc_ids = [
-        loc_id
-        for loc in filtered_locations
-        if isinstance(loc_id := loc.get("id"), str)
-    ]
     detail_map = api_manager.get_location_details(loc_ids)
     labels_map = api_manager.get_location_item_labels(loc_ids)
 
-    base_ui_clean = base_ui.rstrip("/")
+    base_ui_clean = (base_ui or "").rstrip("/")
     return [
         _to_label_content(loc, detail_map, labels_map, path_map, base_ui_clean)
-        for loc in filtered_locations
+        for loc in valid_locations
     ]
 
 
@@ -155,105 +190,139 @@ def _to_label_content(
     )
 
 
-def render(
-    output_path: str | None,
-    template: LabelTemplate,
-    labels: Sequence[LabelContent],
+def run_web_app(
+    api_manager: HomeboxApiManager,
+    base_ui: str,
+    template_name: str,
     skip: int,
     draw_outline: bool,
-) -> str:
-    template.reset()
-    if template.page_size:
-        return render_pdf(output_path, template, labels, skip, draw_outline)
-    else:
-        if draw_outline:
-            raise SystemExit(
-                "--draw-outline is not compatible with non-PDF templates."
-            )
-        if skip > 0:
-            raise SystemExit(
-                "--skip is not compatible with non-PDF templates."
-            )
-        return render_png(output_path, template, labels)
+    host: str,
+    port: int,
+) -> None:
+    """Launch a lightweight Flask app for interactive label selection."""
 
+    from tempfile import NamedTemporaryFile
 
-def render_png(
-    output_path: str | None,
-    template: LabelTemplate,
-    labels: Sequence[LabelContent],
-) -> str:
-    output_path = output_path or "locations"
+    from flask import (
+        Flask,
+        after_this_request,
+        redirect,
+        render_template,
+        request,
+        send_file,
+        url_for,
+    )
 
-    template.reset()
+    base_ui = base_ui or ""
 
-    if len(labels) == 0:
-        return "No labels matched the provided filters; no output generated."
+    template_dir = Path(__file__).resolve().parent / "templates"
+    app = Flask(__name__, template_folder=str(template_dir))
+    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "homebox-labels-ui")
 
-    for i, label in enumerate(labels):
-        png_bytes = template.render_label(label)
+    def _truncate(text: str, limit: int = 120) -> str:
+        text = (text or "").strip()
+        if not text:
+            return ""
+        if len(text) <= limit:
+            return text
+        return text[: limit - 1].rstrip() + "…"
 
-        png_name = f"{output_path}_{(i + 1):02d}.png"
-        with open(png_name, "wb") as handle:
-            handle.write(png_bytes)
+    def _friendly_path(path_text: str) -> str:
+        path_text = (path_text or "").strip()
+        if not path_text:
+            return ""
+        return path_text.replace("->", " / ")
 
-    return f"Wrote {len(labels)} PNG files with prefix '{output_path}_'."
+    @app.route("/", methods=["GET"])
+    def index() -> str:
+        try:
+            contents = collect_label_contents(api_manager, base_ui, None)
+        except Exception as exc:  # pragma: no cover - best effort message
+            return f"Failed to load locations: {exc}", 500
 
-
-def render_pdf(
-    output_path: str | None,
-    template: LabelTemplate,
-    labels: Sequence[LabelContent],
-    skip: int,
-    draw_outline: bool,
-) -> str:
-    output_path = output_path or "locations.pdf"
-
-    template.reset()
-
-    canvas_obj = canvas.Canvas(output_path, pagesize=template.page_size)
-
-    for _ in range(skip):
-        template.next_label_geometry()
-
-    first_page = True
-    for label in labels:
-        geometry = template.next_label_geometry()
-        if geometry.on_new_page:
-            if first_page:
-                first_page = False
-            else:
-                canvas_obj.showPage()
-
-        if geometry.width <= 0 or geometry.height <= 0:
-            raise SystemError(
-                "Template produced non-positive geometry dimensions."
+        rows = []
+        for item in contents:
+            if not item.location_id:
+                continue
+            display_name = " ".join(filter(None, [item.title, item.content])).strip()
+            display_name = display_name or "Unnamed"
+            rows.append(
+                {
+                    "id": item.location_id,
+                    "display_name": display_name,
+                    "path": _friendly_path(item.path_text),
+                    "labels": _truncate(item.labels_text, 80),
+                    "description": _truncate(item.description_text, 160),
+                }
             )
 
-        png_bytes = template.render_label(label)
-        image_reader = ImageReader(BytesIO(png_bytes))
-        canvas_obj.drawImage(
-            image_reader,
-            geometry.left,
-            geometry.bottom,
-            width=geometry.width,
-            height=geometry.height,
-            mask="auto",
+        rows.sort(
+            key=lambda row: (
+                row["path"].lower(),
+                row["display_name"].lower(),
+            )
         )
 
-        if draw_outline:
-            canvas_obj.saveState()
-            canvas_obj.setLineWidth(0.5)
-            canvas_obj.rect(
-                geometry.left,
-                geometry.bottom,
-                geometry.width,
-                geometry.height,
+        error_key = request.args.get("error")
+        error_message = None
+        if error_key == "no-selection":
+            error_message = "Select at least one location before generating labels."
+        elif error_key == "generation":
+            error_message = (
+                request.args.get("message")
+                or "Unable to generate labels for the selected locations."
             )
-            canvas_obj.restoreState()
 
-    canvas_obj.showPage()
-    canvas_obj.save()
-    return f"Wrote {output_path}"
+        return render_template("index.html", locations=rows, error=error_message)
+
+    @app.route("/generate", methods=["POST"])
+    def generate() -> str:
+        selected_ids = request.form.getlist("location_id")
+        if not selected_ids:
+            return redirect(url_for("index", error="no-selection"))
+
+        try:
+            labels = collect_label_contents_by_ids(api_manager, base_ui, selected_ids)
+        except Exception as exc:  # pragma: no cover
+            return redirect(url_for("index", error="generation", message=str(exc)))
+
+        if not labels:
+            return redirect(
+                url_for(
+                    "index",
+                    error="generation",
+                    message="No matching labels were generated.",
+                )
+            )
+
+        template = get_template(template_name)
+        tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
+        tmp_file.close()
+
+        try:
+            render(tmp_file.name, template, labels, skip, draw_outline)
+        except Exception as exc:  # pragma: no cover
+            os.remove(tmp_file.name)
+            return redirect(url_for("index", error="generation", message=str(exc)))
+
+        download_name = "homebox_labels.pdf"
+
+        @after_this_request
+        def cleanup(response):
+            try:
+                os.remove(tmp_file.name)
+            except OSError:
+                pass
+            return response
+
+        return send_file(
+            tmp_file.name,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=download_name,
+        )
+
+    app.run(host=host, port=port, debug=False, use_reloader=False)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -311,16 +380,46 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         action="store_true",
         help="Draw outline around every label",
     )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Start a local web UI for selecting locations before generating labels.",
+    )
+    parser.add_argument(
+        "--web-host",
+        default="127.0.0.1",
+        help="Host/IP for the web UI (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--web-port",
+        type=int,
+        default=5000,
+        help="Port for the web UI (default: 5000).",
+    )
 
     args = parser.parse_args(argv)
 
-    template = get_template(args.template)
+    template_name = args.template
 
     api_manager = HomeboxApiManager(
         base_url=args.base,
         username=args.username,
         password=args.password,
     )
+
+    if args.web:
+        run_web_app(
+            api_manager=api_manager,
+            base_ui=args.base or "",
+            template_name=template_name,
+            skip=args.skip,
+            draw_outline=args.draw_outline,
+            host=args.web_host,
+            port=args.web_port,
+        )
+        return 0
+
+    template = get_template(template_name)
 
     labels = collect_label_contents(api_manager, args.base, args.name_pattern)
     message = render(

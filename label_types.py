@@ -10,6 +10,7 @@ class LabelContent:
     title: str
     content: str
     url: str
+    location_id: str = ""
     path_text: str = ""
     labels_text: str = ""
     description_text: str = ""
