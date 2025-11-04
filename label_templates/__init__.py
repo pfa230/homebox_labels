@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-from importlib import import_module
-from typing import Dict, Iterable, Optional
+import importlib.util
+from pathlib import Path
+from typing import Iterable
 
 from .base import LabelTemplate
 
-_TEMPLATE_MAP = {
-    "5163": "avery5163",
-    "ptouch": "ptouch",
-}
+_TEMPLATE_NAMES = {"avery5163", "ptouch"}
+
+
+def _load_template_module(name: str):
+    """Load template module, handling package/module name conflicts."""
+    key = name.lower()
+    from importlib import import_module
+    return import_module(f"{__name__}.{key}")
 
 
 def get_template(
@@ -19,14 +24,13 @@ def get_template(
     """Instantiate the template implementation for ``name``."""
 
     key = name.lower()
-    module_name = _TEMPLATE_MAP.get(key)
-    if not module_name:
-        available = ", ".join(sorted(_TEMPLATE_MAP))
+    if key not in _TEMPLATE_NAMES:
+        available = ", ".join(sorted(_TEMPLATE_NAMES))
         raise SystemExit(
             f"Unknown template '{name}'. Available templates: {available}"
         )
 
-    module = import_module(f"{__name__}.{module_name}")
+    module = _load_template_module(key)
 
     template_cls: type[LabelTemplate] | None = getattr(
         module,
@@ -45,4 +49,4 @@ def get_template(
 def list_templates() -> Iterable[str]:
     """Return the template identifiers."""
 
-    return sorted(_TEMPLATE_MAP.keys())
+    return sorted(_TEMPLATE_NAMES)

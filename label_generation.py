@@ -64,10 +64,11 @@ def _render_pdf(
 
     canvas_obj = canvas.Canvas(output_path, pagesize=template.page_size)
 
-    for _ in range(skip):
-        template.next_label_geometry()
-
     first_page = True
+    for _ in range(skip):
+        first_page = False
+        print(template.next_label_geometry())
+
     for label in labels:
         geometry = template.next_label_geometry()
         if geometry.on_new_page:

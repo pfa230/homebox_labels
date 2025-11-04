@@ -12,17 +12,25 @@
   <body>
     <h1>Select Template & Options</h1>
     <form method="post" id="options-form" action="{{ url_for('generate') }}">
-      <div class="controls">
-        <label class="option" style="margin-bottom: 0">
-          <span class="option-label">Template</span>
-          <select name="template_name" onchange="onTemplateChange()">
-            {% for template in template_choices %}
-              <option value="{{ template }}" {% if template == selected_template %}selected{% endif %}>
-                {{ template }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
+      <div class="options">
+        <div style="display: flex; gap: 2rem; align-items: center;">
+          <label class="option" style="margin-bottom: 0">
+            <span class="option-label" style="min-width: auto; font-weight: 600;">Template</span>
+            <select name="template_name" onchange="onTemplateChange()">
+              {% for template in template_choices %}
+                <option value="{{ template }}" {% if template == selected_template %}selected{% endif %}>
+                  {{ template }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          {% if has_page_size %}
+            <label class="option" style="margin-bottom: 0">
+              <span class="option-label" style="min-width: auto; font-weight: 600;">Skip labels</span>
+              <input type="number" name="skip" value="{{ skip_labels }}" min="0" style="width: 5rem; padding: 0.4rem 0.6rem; border: 1px solid #d1d5db; border-radius: 4px;" />
+            </label>
+          {% endif %}
+        </div>
       </div>
       <table>
         <thead>
@@ -62,12 +70,11 @@
               {% if option_specs %}
                 <td class="loc-options">
                   {% for option in option_specs %}
-                    {% set selected = loc.selected_options.get(option.name, default_options.get(option.name, option.possible_values[0])) %}
+                    {% set selected = loc.selected_options.get(option.name, option.possible_values[0]) %}
                     <label class="option">
                       <span class="option-label">{{ option.name|capitalize }}</span>
                       <select
                         name="option_{{ option.name }}_{{ loc.id }}"
-                        onchange="onOptionChange(this)"
                       >
                         {% for value in option.possible_values %}
                           <option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ value }}</option>

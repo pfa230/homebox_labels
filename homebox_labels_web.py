@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import os
+from dataclasses import replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import List
 
+from dotenv import load_dotenv
 from flask import (
     Flask,
     after_this_request,
@@ -20,13 +23,9 @@ from werkzeug.datastructures import ImmutableMultiDict
 from werkzeug.wrappers import Response
 
 from homebox_api import HomeboxApiManager
+from label_data import collect_label_contents, collect_label_contents_by_ids
 from label_generation import render
 from label_templates import get_template, list_templates
-
-from homebox_labels import (
-    collect_label_contents,
-    collect_label_contents_by_ids,
-)
 
 
 __all__ = ["run_web_app"]
@@ -34,8 +33,6 @@ __all__ = ["run_web_app"]
 
 def run_web_app(
     api_manager: HomeboxApiManager,
-    base_ui: str,
-    skip: int,
     host: str,
     port: int,
 ) -> None:
@@ -45,7 +42,7 @@ def run_web_app(
     app = Flask(__name__, template_folder=str(template_dir))
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "homebox-labels-ui")
 
-    base_ui = base_ui or ""
+    base_ui = api_manager.base_url or ""
 
     template_choices = list(list_templates())
     if not template_choices:
@@ -68,6 +65,29 @@ def run_web_app(
     def _parse_selected_ids(form: ImmutableMultiDict) -> List[str]:
         ids = form.getlist("location_id")
         return [loc_id for loc_id in ids if loc_id]
+
+    def _parse_template_options(
+        form: ImmutableMultiDict,
+        location_ids: List[str],
+        option_names: List[str],
+    ) -> dict[str, dict[str, str]]:
+        """Parse template options from form data.
+
+        Returns a dict mapping location_id -> {option_name: option_value}
+        """
+        options_by_location: dict[str, dict[str, str]] = {}
+
+        for loc_id in location_ids:
+            location_options: dict[str, str] = {}
+            for option_name in option_names:
+                field_name = f"option_{option_name}_{loc_id}"
+                value = form.get(field_name)
+                if value:
+                    location_options[option_name] = value
+            if location_options:
+                options_by_location[loc_id] = location_options
+
+        return options_by_location
 
     @app.route("/", methods=["GET"])
     def index() -> Response | str:
@@ -122,12 +142,28 @@ def run_web_app(
         if not selected_ids:
             return redirect(url_for("index", error="no-selection"))
 
-        selected_template = request.form.get("template_name")
-        if not selected_template:
-            raise RuntimeError("Template selection is required.")
+        selected_template = request.form.get("template_name") or template_choices[0]
 
-        current_template = get_template(selected_template)
-        option_specs = current_template.available_options()
+        # Validate template name exists
+        if selected_template.lower() not in [t.lower() for t in template_choices]:
+            return redirect(
+                url_for("index", error="generation",
+                        message=f"Unknown template '{selected_template}'")
+            )
+
+        # Load template options for the selected template
+        option_specs = []
+        has_page_size = False
+        try:
+            current_template = get_template(selected_template)
+            option_specs = current_template.available_options()
+            has_page_size = current_template.page_size is not None
+        except SystemExit as exc:
+            return redirect(
+                url_for("index", error="generation", message=str(exc))
+            )
+
+        skip_labels = int(request.form.get("skip", "0") or "0")
 
         try:
             contents = collect_label_contents_by_ids(
@@ -160,6 +196,8 @@ def run_web_app(
             template_choices=template_choices,
             selected_template=selected_template,
             option_specs=option_specs,
+            has_page_size=has_page_size,
+            skip_labels=skip_labels,
         )
 
     @app.route("/generate", methods=["POST"])
@@ -170,9 +208,17 @@ def run_web_app(
 
         selected_template = request.form.get("template_name")
         if not selected_template:
-            raise RuntimeError("Template selection is required.")
+            return redirect(url_for("index", error="generation", message="Template selection is required."))
 
-        get_template(selected_template)  # Validate template early.
+        try:
+            template = get_template(selected_template)
+        except SystemExit as exc:
+            return redirect(
+                url_for("index", error="generation", message=str(exc))
+            )
+
+        option_specs = template.available_options()
+        option_names = [opt.name for opt in option_specs]
 
         try:
             labels = collect_label_contents_by_ids(
@@ -192,13 +238,33 @@ def run_web_app(
                 )
             )
 
-        template = get_template(selected_template)
+        # Parse template options from form and apply to labels
+        options_by_location = _parse_template_options(
+            request.form,
+            selected_ids,
+            option_names,
+        )
+
+        # Update labels with their template options
+        updated_labels = []
+        for label in labels:
+            location_options = options_by_location.get(label.location_id, {})
+            if location_options:
+                updated_label = replace(
+                    label,
+                    template_options=location_options,
+                )
+            else:
+                updated_label = label
+            updated_labels.append(updated_label)
 
         tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
         tmp_file.close()
 
+        skip_labels = int(request.form.get("skip", "0") or "0")
+
         try:
-            render(tmp_file.name, template, labels, skip)
+            render(tmp_file.name, template, updated_labels, skip_labels)
         except Exception as exc:  # pragma: no cover
             os.remove(tmp_file.name)
             return redirect(url_for("index", error="generation", message=str(exc)))
@@ -221,3 +287,41 @@ def run_web_app(
         )
 
     app.run(host=host, port=port, debug=False, use_reloader=False)
+
+
+def main(argv=None):
+    """CLI entry point for the web UI."""
+    parser = argparse.ArgumentParser(
+        description="Homebox label generator web UI"
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host/IP for the web UI (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=5000,
+        help="Port for the web UI (default: 5000).",
+    )
+
+    args = parser.parse_args(argv)
+
+    api_manager = HomeboxApiManager(
+        base_url=os.getenv("HOMEBOX_API_URL", ""),
+        username=os.getenv("HOMEBOX_USERNAME", ""),
+        password=os.getenv("HOMEBOX_PASSWORD", ""),
+    )
+
+    run_web_app(
+        api_manager=api_manager,
+        host=args.host,
+        port=args.port,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    load_dotenv()
+    main()

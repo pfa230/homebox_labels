@@ -203,8 +203,7 @@ def _draw_text_block(
             break
         canvas_obj.setFont(font_name, font_size)
         canvas_obj.drawString(text_start_x, current, line.rstrip())
-        if idx < len(visible_lines) - 1:
-            current -= line_gap
+        current -= line_gap
     return current
 
 

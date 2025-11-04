@@ -5,8 +5,8 @@ from __future__ import annotations
 from enum import StrEnum
 
 from label_types import LabelContent, LabelGeometry
-from .base import LabelTemplate, TemplateOption
-from .avery5163.common import (
+from ..base import LabelTemplate, TemplateOption
+from .common import (
     COLS,
     H_GAP,
     LABEL_H,
@@ -19,8 +19,8 @@ from .avery5163.common import (
     SLOTS,
     V_GAP,
 )
-from .avery5163.horizontal import render_label as render_horizontal_label
-from .avery5163.vertical import render_label as render_vertical_label
+from .horizontal import render_label as render_horizontal_label
+from .vertical import render_label as render_vertical_label
 
 
 class Orientation(StrEnum):
@@ -104,3 +104,4 @@ class Template(LabelTemplate):
         if value in Toggle._value2member_map_:
             return Toggle(value) is Toggle.ON
         return self._DEFAULT_OUTLINE is Toggle.ON
+
