@@ -96,7 +96,6 @@ def collect_label_contents(
     api_manager: HomeboxApiManager,
     base_ui: str,
     name_pattern: Optional[str],
-    default_template_options: Optional[Dict[str, str]] = None,
 ) -> List[LabelContent]:
     """Fetch locations and transform them into label-ready payloads."""
 
@@ -107,7 +106,6 @@ def collect_label_contents(
         filtered_locations,
         api_manager,
         base_ui,
-        default_template_options=default_template_options,
     )
 
 
@@ -115,9 +113,6 @@ def collect_label_contents_by_ids(
     api_manager: HomeboxApiManager,
     base_ui: str,
     location_ids: Sequence[str],
-    *,
-    default_template_options: Optional[Dict[str, str]] = None,
-    template_overrides: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> List[LabelContent]:
     """Return label payloads for the specified location ids."""
 
@@ -139,8 +134,6 @@ def collect_label_contents_by_ids(
         ordered_locations,
         api_manager,
         base_ui,
-        default_template_options=default_template_options,
-        template_overrides=template_overrides,
     )
 
 
@@ -148,9 +141,6 @@ def _build_label_contents(
     locations: Sequence[Dict],
     api_manager: HomeboxApiManager,
     base_ui: str,
-    *,
-    default_template_options: Optional[Dict[str, str]] = None,
-    template_overrides: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> List[LabelContent]:
     valid_locations: List[Dict] = []
     loc_ids: List[str] = []
@@ -169,8 +159,6 @@ def _build_label_contents(
     labels_map = api_manager.get_location_item_labels(loc_ids)
 
     base_ui_clean = (base_ui or "").rstrip("/")
-    overrides = template_overrides or {}
-    defaults = default_template_options or {}
     return [
         _to_label_content(
             loc,
@@ -178,8 +166,6 @@ def _build_label_contents(
             labels_map,
             path_map,
             base_ui_clean,
-            overrides,
-            defaults,
         )
         for loc in valid_locations
     ]
@@ -207,8 +193,6 @@ def _to_label_content(
     labels_map: Dict[str, List[str]],
     path_map: Dict[str, List[str]],
     base_ui: str,
-    template_overrides: Dict[str, Dict[str, str]],
-    default_template_options: Dict[str, str],
 ) -> LabelContent:
     """Convert a single location payload into the printable label structure."""
 
@@ -227,9 +211,6 @@ def _to_label_content(
     path_text = "->".join(trimmed_path)
 
     title, content = split_name_content(location.get("name") or "")
-    options = template_overrides.get(loc_id)
-    if options is None and default_template_options:
-        options = default_template_options.copy()
 
     return LabelContent(
         title=title,
@@ -239,17 +220,13 @@ def _to_label_content(
         path_text=path_text,
         labels_text=labels_text,
         description_text=description,
-        template_options=options,
     )
 
 
 def run_web_app(
     api_manager: HomeboxApiManager,
     base_ui: str,
-    template_name: str,
-    template_options: Dict[str, str],
     skip: int,
-    draw_outline: bool,
     host: str,
     port: int,
 ) -> None:
@@ -275,7 +252,6 @@ def run_web_app(
     base_ui = base_ui or ""
 
     template_choices = list(list_templates())
-    selection_overrides: Dict[str, Dict[str, str]] = {}
 
     def _truncate(text: str, limit: int = 120) -> str:
         text = (text or "").strip()
@@ -344,41 +320,20 @@ def run_web_app(
 
     @app.route("/choose", methods=["POST"])
     def choose() -> Response | str:
-        nonlocal template_name, selection_overrides
-
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("index", error="no-selection"))
 
-        selected_template = request.form.get("template_name") or template_name
-        if selected_template not in template_choices:
-            selected_template = template_name
-
-        template_name = selected_template
+        selected_template = request.form.get("template_name")
 
         current_template = get_template(selected_template)
         option_specs = current_template.available_options()
-
-        per_label_options: Dict[str, Dict[str, str]] = {}
-        for loc_id in selected_ids:
-            overrides: Dict[str, str] = {}
-            for option in option_specs:
-                field = f"option_{option.name}_{loc_id}"
-                submitted = request.form.get(field)
-                if submitted:
-                    overrides[option.name] = submitted
-            if overrides:
-                per_label_options[loc_id] = overrides
-
-        selection_overrides = {k: v.copy() for k, v in per_label_options.items()}
 
         try:
             contents = collect_label_contents_by_ids(
                 api_manager,
                 base_ui,
                 selected_ids,
-                default_template_options=template_options,
-                template_overrides=per_label_options,
             )
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("index", error="generation", message=str(exc)))
@@ -403,45 +358,26 @@ def run_web_app(
             template_choices=template_choices,
             selected_template=selected_template,
             option_specs=option_specs,
-            default_options=template_options,
         )
 
     @app.route("/generate", methods=["POST"])
     def generate() -> Response | str:
-        nonlocal template_name, template_options, selection_overrides
-
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("index", error="no-selection"))
 
-        selected_template = request.form.get("template_name") or template_name
-        if selected_template not in template_choices:
-            selected_template = template_name
+        selected_template = request.form.get("template_name")
 
-        option_values = template_options.copy()
         current_template = get_template(selected_template)
         option_specs = current_template.available_options()
 
         per_label_options: Dict[str, Dict[str, str]] = {}
-        for loc_id in selected_ids:
-            overrides: Dict[str, str] = {}
-            for option in option_specs:
-                field = f"option_{option.name}_{loc_id}"
-                submitted = request.form.get(field)
-                if submitted:
-                    overrides[option.name] = submitted
-                elif option.name in selection_overrides.get(loc_id, {}):
-                    overrides[option.name] = selection_overrides[loc_id][option.name]
-            if overrides:
-                per_label_options[loc_id] = overrides
 
         try:
             labels = collect_label_contents_by_ids(
                 api_manager,
                 base_ui,
                 selected_ids,
-                default_template_options=option_values,
-                template_overrides=per_label_options,
             )
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("index", error="generation", message=str(exc)))
@@ -455,16 +391,13 @@ def run_web_app(
                 )
             )
 
-        template = get_template(selected_template, option_values)
-        template_name = selected_template
-        template_options = option_values
-        selection_overrides = {k: v.copy() for k, v in per_label_options.items()}
+        template = get_template(selected_template)
 
         tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
         tmp_file.close()
 
         try:
-            render(tmp_file.name, template, labels, skip, draw_outline)
+            render(tmp_file.name, template, labels, skip)
         except Exception as exc:  # pragma: no cover
             os.remove(tmp_file.name)
             return redirect(url_for("index", error="generation", message=str(exc)))
@@ -586,29 +519,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         run_web_app(
             api_manager=api_manager,
             base_ui=args.base or "",
-            template_name=template_name,
-            template_options=template_options,
             skip=args.skip,
-            draw_outline=args.draw_outline,
             host=args.web_host,
             port=args.web_port,
         )
         return 0
 
-    template = get_template(template_name, template_options)
+    template = get_template(template_name)
 
     labels = collect_label_contents(
         api_manager,
         args.base,
         args.name_pattern,
-        default_template_options=template_options,
     )
     message = render(
         args.output,
         template,
         labels,
         args.skip,
-        args.draw_outline,
     )
 
     print(message)

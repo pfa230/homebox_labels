@@ -17,15 +17,12 @@ def render(
     template: LabelTemplate,
     labels: Sequence[LabelContent],
     skip: int,
-    draw_outline: bool,
 ) -> str:
     """Render labels to either PDF or PNG output depending on template type."""
 
     template.reset()
     if template.page_size:
-        return _render_pdf(output_path, template, labels, skip, draw_outline)
-    if draw_outline:
-        raise SystemExit("--draw-outline is not compatible with non-PDF templates.")
+        return _render_pdf(output_path, template, labels, skip)
     if skip > 0:
         raise SystemExit("--skip is not compatible with non-PDF templates.")
     return _render_png(output_path, template, labels)
@@ -60,7 +57,6 @@ def _render_pdf(
     template: LabelTemplate,
     labels: Sequence[LabelContent],
     skip: int,
-    draw_outline: bool,
 ) -> str:
     """Render labels to a multi-page PDF."""
 
@@ -95,17 +91,6 @@ def _render_pdf(
             height=geometry.height,
             mask="auto",
         )
-
-        if draw_outline:
-            canvas_obj.saveState()
-            canvas_obj.setLineWidth(0.5)
-            canvas_obj.rect(
-                geometry.left,
-                geometry.bottom,
-                geometry.width,
-                geometry.height,
-            )
-            canvas_obj.restoreState()
 
     canvas_obj.showPage()
     canvas_obj.save()
