@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 
 
 @dataclass(frozen=True)
 class LabelContent:
     """Textual payload to render into a label."""
 
-    title: str
-    content: str
+    display_id: str
+    name: str
     url: str
-    location_id: str = ""
-    path_text: str = ""
-    labels_text: str = ""
-    description_text: str = ""
+    id: str = ""
+    parent: str = ""
+    labels: List[str] = field(default_factory=list)
+    description: str = ""
     template_options: dict[str, str] | None = None
 
 

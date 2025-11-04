@@ -93,6 +93,48 @@ class HomeboxApiManager:
             )
         return labels_map
 
+    def list_items(self, page_size: int = 100) -> List[Dict]:
+        """Return the list of all items/assets."""
+
+        items = []
+        page = 1
+        while True:
+            response = self._items_api.v1_items_get(
+                page=page,
+                page_size=page_size,
+                _request_timeout=self.timeout,
+            )
+            page_items = response.items or []
+            items.extend([item.to_dict() for item in page_items])
+
+            total = response.total or 0
+            if not page_items or len(page_items) < page_size:
+                break
+            if total and page * page_size >= total:
+                break
+            page += 1
+
+        return items
+
+    def get_item_detail(self, item_id: str) -> Dict:
+        """Fetch detail payload for a specific item."""
+
+        detail = self._items_api.v1_items_id_get(
+            item_id,
+            _request_timeout=self.timeout,
+        )
+        return detail.to_dict()
+
+    def get_item_details(self, item_ids: Iterable[str]) -> Dict[str, Dict]:
+        """Fetch details for the provided collection of item IDs."""
+
+        details: Dict[str, Dict] = {}
+        for item_id in item_ids:
+            if not item_id:
+                continue
+            details[item_id] = self.get_item_detail(item_id)
+        return details
+
     def _fetch_labels_for_location(
         self,
         loc_id: str,

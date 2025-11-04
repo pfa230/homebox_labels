@@ -88,7 +88,7 @@ def _render_row_1(canvas_obj: canvas.Canvas, content: LabelContent) -> float:
         mask="auto",
     )
 
-    title = content.title.strip() or "N/A"
+    title = content.display_id.strip() or "N/A"
     title_width = width - 2 * VERT_LABEL_PADDING
     title_size = shrink_fit(
         title,
@@ -112,7 +112,7 @@ def _render_row_2(canvas_obj: canvas.Canvas, content: LabelContent, top: float) 
     bottom = (top + VERT_LABEL_PADDING) / 2
     region_height = top - bottom
 
-    body = content.content.strip()
+    body = content.name.strip()
     content_font = VERT_CONTENT_FONT
     if body:
         chosen_lines, chosen_size = wrap_text_to_width_multiline(
@@ -155,8 +155,8 @@ def _render_row_3(canvas_obj: canvas.Canvas, content: LabelContent, height: floa
 
     info_cursor = height - VERT_SECTION_GAP
     sections: list[tuple[str, int]] = [
-        (content.description_text.strip(), 3),
-        (content.labels_text.strip(), 2),
+        (content.description.strip(), 3),
+        (", ".join(content.labels).strip(), 2),
     ]
 
     for text, max_lines in sections:

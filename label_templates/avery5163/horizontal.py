@@ -55,7 +55,7 @@ def render_label(
 
 
 def _render_col_1(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
-    title = content.title.strip() or "N/A"
+    title = content.display_id.strip() or "N/A"
     text_width = COL_1_W - 2 * LABEL_PADDING
     title_max = _FONTS.title.size
     title_min = max(title_max * 0.5, 8.0)
@@ -100,7 +100,7 @@ def _render_col_2(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
     text_start_x = COL_1_W + LABEL_PADDING
     text_max_width = COL_2_W - 2 * LABEL_PADDING
 
-    content_text = content.content.strip()
+    content_text = content.name.strip()
     if content_text:
         content_max = _FONTS.content.size
         content_min = max(content_max * 0.5, 6.0)
@@ -116,7 +116,7 @@ def _render_col_2(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
         canvas_obj.drawString(text_start_x, body_y, content_text)
 
     info_y = info_row_y - LABEL_PADDING - _FONTS.label.size
-    labels_text = content.labels_text.strip()
+    labels_text = ", ".join(content.labels).strip()
     if labels_text and info_y >= _FONTS.label.size:
         info_y = _draw_text_block(
             canvas_obj,
@@ -128,11 +128,11 @@ def _render_col_2(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
         )
         info_y -= LABEL_PADDING / 2.0
 
-    description_text = content.description_text.strip()
-    if description_text and info_y >= _FONTS.label.size:
+    description = content.description.strip()
+    if description and info_y >= _FONTS.label.size:
         _draw_text_block(
             canvas_obj,
-            description_text,
+            description,
             info_y,
             text_start_x,
             text_max_width,

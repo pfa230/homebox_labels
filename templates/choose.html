@@ -10,8 +10,15 @@
     <script src="{{ url_for('static', filename='js/choose.js') }}" defer></script>
   </head>
   <body>
-    <h1>Select Template & Options</h1>
-    <form method="post" id="options-form" action="{{ url_for('generate') }}">
+    <h1>Select Template & Options - {{ 'Assets' if page_type == 'assets' else 'Locations' }}</h1>
+    <div style="margin-bottom: 1rem;">
+      {% if page_type == 'locations' %}
+        <a href="{{ url_for('assets_index') }}" style="color: #2563eb; text-decoration: none;">Switch to Assets →</a>
+      {% else %}
+        <a href="{{ url_for('locations_index') }}" style="color: #2563eb; text-decoration: none;">Switch to Locations →</a>
+      {% endif %}
+    </div>
+    <form method="post" id="options-form" action="{{ url_for('assets_generate' if page_type == 'assets' else 'locations_generate') }}" data-page-type="{{ page_type }}">
       <div class="options">
         <div style="display: flex; gap: 2rem; align-items: center;">
           <label class="option" style="margin-bottom: 0">
@@ -92,7 +99,7 @@
         <button type="submit" class="primary">
           Render Labels
         </button>
-        <button type="button" class="secondary" onclick="window.location='{{ url_for('index') }}'">
+        <button type="button" class="secondary" onclick="window.location='{{ url_for('assets_index' if page_type == 'assets' else 'locations_index') }}'">
           Start Over
         </button>
       </div>

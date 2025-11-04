@@ -8,7 +8,7 @@ from typing import Optional, Sequence
 from dotenv import load_dotenv
 
 from homebox_api import HomeboxApiManager
-from label_data import collect_label_contents
+from label_data import collect_locations_label_contents
 from label_generation import render
 from label_templates import get_template
 
@@ -108,7 +108,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     template = get_template(template_name)
 
-    labels = collect_label_contents(
+    labels = collect_locations_label_contents(
         api_manager,
         args.base,
         args.name_pattern,

@@ -92,7 +92,7 @@ class Template(LabelTemplate):
         )
 
         text_left = LABEL_MARGIN_LEFT + QR_TEXT_GAP + qr_size
-        title = content.title.strip() or "Unnamed"
+        title = content.display_id.strip() or "Unnamed"
         title_size = shrink_fit(
             title,
             text_area_width,
@@ -104,7 +104,7 @@ class Template(LabelTemplate):
         canvas_obj.setFont(_FONTS.title.font_name, title_size)
         canvas_obj.drawString(text_left, title_baseline, title)
 
-        body_text = content.content.strip()
+        body_text = content.name.strip()
         if body_text:
             available_height = title_baseline - TEXT_GAP
             body_lines, body_size = self._wrap_content_lines(
@@ -136,9 +136,9 @@ class Template(LabelTemplate):
     def _compute_width(self, label: LabelContent) -> float:
         qr_size = LABEL_HEIGHT
         text_lines = [
-            label.title.strip() or "",
-            label.content.strip() or "",
-            label.labels_text.strip() or "",
+            label.display_id.strip() or "",
+            label.name.strip() or "",
+            ", ".join(label.labels).strip() or "",
         ]
 
         font_cycle = [
