@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from importlib import import_module
 
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from .base import LabelTemplate
 
@@ -45,3 +45,9 @@ def get_template(
     if options:
         template.apply_options(options)
     return template
+
+
+def list_templates() -> Iterable[str]:
+    """Return available template identifiers."""
+
+    return sorted(_TEMPLATE_MAP.keys())

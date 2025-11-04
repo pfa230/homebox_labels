@@ -7,12 +7,14 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from werkzeug.datastructures import ImmutableMultiDict
+
 from dotenv import load_dotenv
 
 from homebox_api import HomeboxApiManager
 from label_generation import render
 from label_types import LabelContent
-from label_templates import get_template
+from label_templates import get_template, list_templates
 
 
 def _filter_locations_by_name(
@@ -264,6 +266,7 @@ def run_web_app(
         send_file,
         url_for,
     )
+    from werkzeug.wrappers import Response
 
     template_dir = Path(__file__).resolve().parent / "templates"
     app = Flask(__name__, template_folder=str(template_dir))
@@ -271,7 +274,7 @@ def run_web_app(
 
     base_ui = base_ui or ""
 
-    option_specs = get_template(template_name).available_options()
+    template_choices = list(list_templates())
     selection_overrides: Dict[str, Dict[str, str]] = {}
 
     def _truncate(text: str, limit: int = 120) -> str:
@@ -288,17 +291,16 @@ def run_web_app(
             return ""
         return path_text.replace("->", " / ")
 
+    def _parse_selected_ids(form: ImmutableMultiDict[str, str]) -> List[str]:
+        ids = form.getlist("location_id")
+        return [loc_id for loc_id in ids if loc_id]
+
     @app.route("/", methods=["GET"])
-    def index() -> str:
+    def index() -> Response | str:
         try:
-            contents = collect_label_contents(
-                api_manager,
-                base_ui,
-                None,
-                default_template_options=template_options,
-            )
+            contents = collect_label_contents(api_manager, base_ui, None)
         except Exception as exc:  # pragma: no cover - best effort message
-            return f"Failed to load locations: {exc}", 500
+            return Response(f"Failed to load locations: {exc}", status=500)
 
         rows = []
         for item in contents:
@@ -306,11 +308,6 @@ def run_web_app(
                 continue
             display_name = " ".join(filter(None, [item.title, item.content])).strip()
             display_name = display_name or "Unnamed"
-            override = selection_overrides.get(item.location_id)
-            if override is not None:
-                current_options = override.copy()
-            else:
-                current_options = (template_options or {}).copy()
             rows.append(
                 {
                     "id": item.location_id,
@@ -318,7 +315,6 @@ def run_web_app(
                     "path": _friendly_path(item.path_text),
                     "labels": _truncate(item.labels_text, 80),
                     "description": _truncate(item.description_text, 160),
-                    "selected_options": current_options,
                 }
             )
 
@@ -343,18 +339,26 @@ def run_web_app(
             "index.html",
             locations=rows,
             error=error_message,
-            template_options=option_specs,
-            selected_options=template_options,
+            template_choices=template_choices,
         )
 
-    @app.route("/generate", methods=["POST"])
-    def generate() -> str:
-        nonlocal template_options
-        selected_ids = request.form.getlist("location_id")
+    @app.route("/choose", methods=["POST"])
+    def choose() -> Response | str:
+        nonlocal template_name, selection_overrides
+
+        selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("index", error="no-selection"))
 
-        option_values = template_options.copy()
+        selected_template = request.form.get("template_name") or template_name
+        if selected_template not in template_choices:
+            selected_template = template_name
+
+        template_name = selected_template
+
+        current_template = get_template(selected_template)
+        option_specs = current_template.available_options()
+
         per_label_options: Dict[str, Dict[str, str]] = {}
         for loc_id in selected_ids:
             overrides: Dict[str, str] = {}
@@ -363,6 +367,71 @@ def run_web_app(
                 submitted = request.form.get(field)
                 if submitted:
                     overrides[option.name] = submitted
+            if overrides:
+                per_label_options[loc_id] = overrides
+
+        selection_overrides = {k: v.copy() for k, v in per_label_options.items()}
+
+        try:
+            contents = collect_label_contents_by_ids(
+                api_manager,
+                base_ui,
+                selected_ids,
+                default_template_options=template_options,
+                template_overrides=per_label_options,
+            )
+        except Exception as exc:  # pragma: no cover
+            return redirect(url_for("index", error="generation", message=str(exc)))
+
+        rows = []
+        for item in contents:
+            display_name = " ".join(filter(None, [item.title, item.content])).strip() or "Unnamed"
+            rows.append(
+                {
+                    "id": item.location_id,
+                    "display_name": display_name,
+                    "path": _friendly_path(item.path_text),
+                    "labels": _truncate(item.labels_text, 80),
+                    "description": _truncate(item.description_text, 160),
+                    "selected_options": item.template_options or {},
+                }
+            )
+
+        return render_template(
+            "choose.html",
+            locations=rows,
+            template_choices=template_choices,
+            selected_template=selected_template,
+            option_specs=option_specs,
+            default_options=template_options,
+        )
+
+    @app.route("/generate", methods=["POST"])
+    def generate() -> Response | str:
+        nonlocal template_name, template_options, selection_overrides
+
+        selected_ids = _parse_selected_ids(request.form)
+        if not selected_ids:
+            return redirect(url_for("index", error="no-selection"))
+
+        selected_template = request.form.get("template_name") or template_name
+        if selected_template not in template_choices:
+            selected_template = template_name
+
+        option_values = template_options.copy()
+        current_template = get_template(selected_template)
+        option_specs = current_template.available_options()
+
+        per_label_options: Dict[str, Dict[str, str]] = {}
+        for loc_id in selected_ids:
+            overrides: Dict[str, str] = {}
+            for option in option_specs:
+                field = f"option_{option.name}_{loc_id}"
+                submitted = request.form.get(field)
+                if submitted:
+                    overrides[option.name] = submitted
+                elif option.name in selection_overrides.get(loc_id, {}):
+                    overrides[option.name] = selection_overrides[loc_id][option.name]
             if overrides:
                 per_label_options[loc_id] = overrides
 
@@ -386,9 +455,11 @@ def run_web_app(
                 )
             )
 
-        template = get_template(template_name, option_values)
+        template = get_template(selected_template, option_values)
+        template_name = selected_template
         template_options = option_values
-        selection_overrides.update(per_label_options)
+        selection_overrides = {k: v.copy() for k, v in per_label_options.items()}
+
         tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
         tmp_file.close()
 

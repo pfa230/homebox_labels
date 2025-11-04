@@ -27,9 +27,9 @@
     {% if error %}
       <div class="error">{{ error }}</div>
     {% endif %}
-    <form method="post" action="{{ url_for('generate') }}">
+    <form method="post" action="{{ url_for('choose') }}">
       <div class="controls">
-        <button type="submit" class="primary">Generate PDF</button>
+        <button type="submit" class="primary">Render Labels</button>
         <button type="button" class="secondary" onclick="toggleAll(true)">
           Select All
         </button>
@@ -47,9 +47,6 @@
             <th>Location</th>
             <th style="width: 20%">Labels</th>
             <th style="width: 30%">Description</th>
-            {% if template_options %}
-              <th style="width: 18%">Options</th>
-            {% endif %}
           </tr>
         </thead>
         <tbody>
@@ -78,25 +75,6 @@
                   &mdash;
                 {% endif %}
               </td>
-              {% if template_options %}
-                <td class="loc-options">
-                  {% for option in template_options %}
-                    {% set selected = loc.selected_options.get(option.name, selected_options.get(option.name, option.possible_values[0])) %}
-                    <label class="option">
-                      <span class="option-label">{{ option.name|capitalize }}</span>
-                      <select
-                        name="option_{{ option.name }}_{{ loop.index0 }}"
-                      >
-                        {% for value in option.possible_values %}
-                          <option value="{{ value }}" {% if selected == value %}selected{% endif %}>
-                            {{ value }}
-                          </option>
-                        {% endfor %}
-                      </select>
-                    </label>
-                  {% endfor %}
-                </td>
-              {% endif %}
             </tr>
           {% endfor %}
         </tbody>

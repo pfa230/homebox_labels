@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Customize Labels</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/main.css') }}"
+    />
+    <script src="{{ url_for('static', filename='js/choose.js') }}" defer></script>
+  </head>
+  <body>
+    <h1>Select Template & Options</h1>
+    <form method="post" id="options-form" action="{{ url_for('generate') }}">
+      <div class="controls">
+        <label class="option" style="margin-bottom: 0">
+          <span class="option-label">Template</span>
+          <select name="template_name" onchange="onTemplateChange()">
+            {% for template in template_choices %}
+              <option value="{{ template }}" {% if template == selected_template %}selected{% endif %}>
+                {{ template }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Location</th>
+            <th style="width: 25%">Labels</th>
+            <th style="width: 35%">Description</th>
+            {% if option_specs %}
+              <th style="width: 20%">Options</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for loc in locations %}
+            <tr>
+              <td>
+                <input type="hidden" name="location_id" value="{{ loc.id }}" />
+                <div><strong>{{ loc.display_name }}</strong></div>
+                {% if loc.path %}
+                  <div class="path">{{ loc.path }}</div>
+                {% endif %}
+              </td>
+              <td>
+                {% if loc.labels %}
+                  <div class="meta">{{ loc.labels }}</div>
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              <td>
+                {% if loc.description %}
+                  {{ loc.description }}
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              {% if option_specs %}
+                <td class="loc-options">
+                  {% for option in option_specs %}
+                    {% set selected = loc.selected_options.get(option.name, default_options.get(option.name, option.possible_values[0])) %}
+                    <label class="option">
+                      <span class="option-label">{{ option.name|capitalize }}</span>
+                      <select
+                        name="option_{{ option.name }}_{{ loc.id }}"
+                        onchange="onOptionChange(this)"
+                      >
+                        {% for value in option.possible_values %}
+                          <option value="{{ value }}" {% if selected == value %}selected{% endif %}>{{ value }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                  {% endfor %}
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="controls" style="margin-top: 1.5rem">
+        <button type="submit" class="primary">
+          Render Labels
+        </button>
+        <button type="button" class="secondary" onclick="window.location='{{ url_for('index') }}'">
+          Start Over
+        </button>
+      </div>
+    </form>
+  </body>
+</html>
