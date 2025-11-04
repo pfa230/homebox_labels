@@ -29,8 +29,8 @@ class Orientation(StrEnum):
 
 
 class Toggle(StrEnum):
-    ON = "on"
     OFF = "off"
+    ON = "on"
 
 
 class Template(LabelTemplate):
@@ -104,4 +104,3 @@ class Template(LabelTemplate):
         if value in Toggle._value2member_map_:
             return Toggle(value) is Toggle.ON
         return self._DEFAULT_OUTLINE is Toggle.ON
-

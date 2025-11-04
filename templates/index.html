@@ -51,8 +51,10 @@
         <thead>
           <tr>
             <th style="width: 3rem">Pick</th>
-            <th>Location</th>
-            <th style="width: 20%">Labels</th>
+            <th style="width: 12%">ID</th>
+            <th>Name</th>
+            <th style="width: 18%">Parent</th>
+            <th style="width: 22%">Labels</th>
             <th style="width: 30%">Description</th>
           </tr>
         </thead>
@@ -63,9 +65,20 @@
                 <input type="checkbox" name="location_id" value="{{ loc.id }}" />
               </td>
               <td>
+                {% if loc.display_id %}
+                  <div class="meta">{{ loc.display_id }}</div>
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              <td>
                 <div><strong>{{ loc.display_name }}</strong></div>
-                {% if loc.path %}
-                  <div class="path">{{ loc.path }}</div>
+              </td>
+              <td>
+                {% if loc.parent %}
+                  <div class="path">{{ loc.parent }}</div>
+                {% else %}
+                  &mdash;
                 {% endif %}
               </td>
               <td>
