@@ -24,7 +24,7 @@ class HomeboxApiManager:
     timeout: int = DEFAULT_TIMEOUT
 
     def __post_init__(self) -> None:
-        base_clean = self.base_url.rstrip("/")
+        base_clean = (self.base_url or "").rstrip("/")
         if not base_clean:
             raise RuntimeError("Homebox base URL is required.")
         if not self.username or not self.password:

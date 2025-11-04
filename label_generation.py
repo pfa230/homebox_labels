@@ -92,6 +92,5 @@ def _render_pdf(
             mask="auto",
         )
 
-    canvas_obj.showPage()
     canvas_obj.save()
     return f"Wrote {output_path}"
