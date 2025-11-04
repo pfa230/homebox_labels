@@ -148,6 +148,7 @@ def _to_label_content(
         title=title,
         content=content,
         url=build_ui_url(base_ui, loc_id),
+        location_id=loc_id,
         path_text=path_text,
         labels_text=labels_text,
         description_text=description,
