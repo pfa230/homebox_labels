@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from label_types import LabelContent, LabelGeometry
 
@@ -55,8 +55,3 @@ class LabelTemplate(ABC):
         """Return user-tunable options supported by the template."""
 
         return []
-
-    def apply_options(self, selections: Dict[str, str]) -> None:
-        """Apply user-selected template options."""
-
-        return None

@@ -56,11 +56,6 @@ class Template(LabelTemplate):
     def next_label_geometry(self) -> LabelGeometry:
         raise SystemError("Not supported")
 
-    def consume_page_break(self) -> bool:  # type: ignore[override]
-        pending = self._page_break_pending
-        self._page_break_pending = False
-        return pending
-
     def render_label(
         self,
         content: LabelContent,

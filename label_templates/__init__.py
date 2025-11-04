@@ -3,21 +3,18 @@
 from __future__ import annotations
 
 from importlib import import_module
-
 from typing import Dict, Iterable, Optional
 
 from .base import LabelTemplate
 
 _TEMPLATE_MAP = {
     "5163": "avery5163",
-    "5163_vert": "avery5163_vert",
     "ptouch": "ptouch",
 }
 
 
 def get_template(
     name: str,
-    options: Optional[Dict[str, str]] = None,
 ) -> LabelTemplate:
     """Instantiate the template implementation for ``name``."""
 
@@ -42,12 +39,10 @@ def get_template(
         )
 
     template = template_cls()
-    if options:
-        template.apply_options(options)
     return template
 
 
 def list_templates() -> Iterable[str]:
-    """Return available template identifiers."""
+    """Return the template identifiers."""
 
     return sorted(_TEMPLATE_MAP.keys())
