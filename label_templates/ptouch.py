@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from enum import StrEnum
 
 import fitz
 import qrcode
@@ -37,6 +38,11 @@ _FONTS = build_font_config(
 )
 
 
+class TypeOption(StrEnum):
+    NORMAL = "normal"
+    MINIMAL = "minimal"
+
+
 class Template(LabelTemplate):
     """Stateful template for Brother P-Touch continuous tape."""
 
@@ -44,7 +50,13 @@ class Template(LabelTemplate):
         super().__init__()
 
     def available_options(self) -> list[TemplateOption]:  # type: ignore[override]
-        return []
+        # Expose a minimal type that renders only QR + display_id and rotates output 90°.
+        return [
+            TemplateOption(
+                name="type",
+                possible_values=[m.value for m in TypeOption],
+            ),
+        ]
 
     @property
     def raster_dpi(self) -> int:  # type: ignore[override]
@@ -60,6 +72,11 @@ class Template(LabelTemplate):
         self,
         content: LabelContent,
     ) -> bytes:  # type: ignore[override]
+        t = self._type_for_label(content)
+
+        if t is TypeOption.MINIMAL:
+            return self._render_minimal(content)
+
         width = self._compute_width(content)
 
         buffer = BytesIO()
@@ -197,3 +214,86 @@ class Template(LabelTemplate):
             min(max_height, MAX_FONT_SIZE_CONTENT),
         )
         return ([stripped], fallback_size)
+
+    def _type_for_label(self, content: LabelContent) -> TypeOption:
+        options = content.template_options or {}
+        value = (options.get("type") or TypeOption.NORMAL.value).lower()
+        if value in TypeOption._value2member_map_:
+            return TypeOption(value)
+        return TypeOption.NORMAL
+
+    # Minimal rendering: only QR + display_id, then rotate output 90° clockwise.
+    def _render_minimal(self, content: LabelContent) -> bytes:
+        title = content.display_id.strip() or "N/A"
+        width = self._compute_width_minimal(title)
+
+        buffer = BytesIO()
+        canvas_obj = canvas.Canvas(buffer, pagesize=(width, LABEL_HEIGHT))
+
+        qr_size = LABEL_HEIGHT
+        text_area_width = (
+            width
+            - qr_size
+            - QR_TEXT_GAP
+            - LABEL_MARGIN_LEFT
+            - LABEL_MARGIN_RIGHT
+        )
+
+        qr_buffer = BytesIO()
+        qr = qrcode.QRCode(border=0)
+        qr.add_data(content.url)
+        qr_img = qr.make_image()
+        qr_img.save(qr_buffer, kind="PNG")
+        qr_buffer.seek(0)
+
+        # Draw QR on the left
+        canvas_obj.drawImage(
+            ImageReader(qr_buffer),
+            LABEL_MARGIN_LEFT,
+            0,
+            width=qr_size,
+            height=qr_size,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+
+        # Draw only display_id to the right of QR
+        text_left = LABEL_MARGIN_LEFT + QR_TEXT_GAP + qr_size
+        title_size = shrink_fit(
+            title,
+            text_area_width,
+            max_font=_FONTS.title.size,
+            min_font=max(_FONTS.title.size * 0.5, 6.0),
+            font_name=_FONTS.title.font_name,
+        )
+        title_baseline = (LABEL_HEIGHT - title_size) / 2.0 + title_size  # vertically centered
+        canvas_obj.setFont(_FONTS.title.font_name, title_size)
+        canvas_obj.drawString(text_left, title_baseline, title)
+
+        canvas_obj.showPage()
+        canvas_obj.save()
+
+        # Rasterize to PNG then rotate 90 degrees
+        pdf_bytes = buffer.getvalue()
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            page = doc.load_page(0)
+            pix = page.get_pixmap(dpi=self.raster_dpi)
+            png_bytes = pix.tobytes("png")
+
+        try:
+            from PIL import Image  # Pillow is in requirements
+        except Exception:
+            # Fallback: return unrotated if Pillow is not available
+            return png_bytes
+
+        img = Image.open(BytesIO(png_bytes))
+        rotated = img.rotate(90, expand=True)
+        out = BytesIO()
+        rotated.save(out, format="PNG")
+        return out.getvalue()
+
+    def _compute_width_minimal(self, title: str) -> float:
+        qr_size = LABEL_HEIGHT
+        text_width = stringWidth(title, _FONTS.title.font_name, _FONTS.title.size)
+        required = LABEL_MARGIN_LEFT + qr_size + QR_TEXT_GAP + text_width + LABEL_MARGIN_RIGHT
+        return min(max(required, MIN_WIDTH), MAX_WIDTH)
