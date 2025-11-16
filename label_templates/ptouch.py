@@ -14,6 +14,7 @@ from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
+from label_templates.avery5163.common import QR_SIZE
 from .base import LabelTemplate, TemplateOption
 from .utils import shrink_fit, wrap_text_to_width_multiline
 
@@ -224,20 +225,21 @@ class Template(LabelTemplate):
 
     # Minimal rendering: only QR + display_id, then rotate output 90° clockwise.
     def _render_minimal(self, content: LabelContent) -> bytes:
+
         title = content.display_id.strip() or "N/A"
-        width = self._compute_width_minimal(title)
+        title_size = shrink_fit(
+            title,
+            LABEL_HEIGHT,
+            max_font=_FONTS.title.size,
+            min_font=max(_FONTS.title.size * 0.5, 6.0),
+            font_name=_FONTS.title.font_name,
+        )
+        width = LABEL_HEIGHT
+        qr_size = width
+        height = LABEL_MARGIN_LEFT + qr_size + title_size + LABEL_MARGIN_RIGHT
 
         buffer = BytesIO()
-        canvas_obj = canvas.Canvas(buffer, pagesize=(width, LABEL_HEIGHT))
-
-        qr_size = LABEL_HEIGHT
-        text_area_width = (
-            width
-            - qr_size
-            - QR_TEXT_GAP
-            - LABEL_MARGIN_LEFT
-            - LABEL_MARGIN_RIGHT
-        )
+        canvas_obj = canvas.Canvas(buffer, pagesize=(width, height))
 
         qr_buffer = BytesIO()
         qr = qrcode.QRCode(border=0)
@@ -246,29 +248,21 @@ class Template(LabelTemplate):
         qr_img.save(qr_buffer, kind="PNG")
         qr_buffer.seek(0)
 
+        qr_bottom = height - LABEL_MARGIN_LEFT - qr_size
         # Draw QR on the left
         canvas_obj.drawImage(
             ImageReader(qr_buffer),
-            LABEL_MARGIN_LEFT,
             0,
+            qr_bottom,
             width=qr_size,
             height=qr_size,
             preserveAspectRatio=True,
             mask="auto",
         )
 
-        # Draw only display_id to the right of QR
-        text_left = LABEL_MARGIN_LEFT + QR_TEXT_GAP + qr_size
-        title_size = shrink_fit(
-            title,
-            text_area_width,
-            max_font=_FONTS.title.size,
-            min_font=max(_FONTS.title.size * 0.5, 6.0),
-            font_name=_FONTS.title.font_name,
-        )
-        title_baseline = (LABEL_HEIGHT - title_size) / 2.0 + title_size  # vertically centered
+        title_baseline = qr_bottom - title_size
         canvas_obj.setFont(_FONTS.title.font_name, title_size)
-        canvas_obj.drawString(text_left, title_baseline, title)
+        canvas_obj.drawString(0, title_baseline, title)
 
         canvas_obj.showPage()
         canvas_obj.save()
