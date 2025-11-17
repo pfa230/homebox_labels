@@ -59,6 +59,40 @@ def run_web_app(
     location_cache: dict[str, LabelContent] = {}
     asset_cache: dict[str, LabelContent] = {}
 
+    sortable_fields = ("id", "name", "parent")
+
+    def _parse_sort_params(default_field: str = "parent") -> tuple[str, str]:
+        sort_field = request.args.get("sort", default_field)
+        if sort_field not in sortable_fields:
+            sort_field = default_field
+
+        sort_direction = request.args.get("direction", "asc").lower()
+        if sort_direction not in {"asc", "desc"}:
+            sort_direction = "asc"
+
+        return sort_field, sort_direction
+
+    def _sort_rows(rows: list[dict[str, str]], sort_field: str, sort_direction: str) -> None:
+        def _key(row: dict[str, str]) -> tuple[str, str, str]:
+            base_id = (row.get("display_id") or row.get("id") or "").lower()
+            name = (row.get("display_name") or "").lower()
+            parent = (row.get("parent") or "").lower()
+
+            if sort_field == "id":
+                return (base_id, name, parent)
+            if sort_field == "name":
+                return (name, parent, base_id)
+            return (parent, name, base_id)
+
+        rows.sort(key=_key, reverse=sort_direction == "desc")
+
+    def _build_sort_links(endpoint: str, sort_field: str, sort_direction: str) -> dict[str, str]:
+        links: dict[str, str] = {}
+        for field in sortable_fields:
+            next_direction = "desc" if (field == sort_field and sort_direction == "asc") else "asc"
+            links[field] = url_for(endpoint, sort=field, direction=next_direction)
+        return links
+
     def _truncate(text: str, limit: int = 120) -> str:
         text = (text or "").strip()
         if not text:
@@ -130,7 +164,9 @@ def run_web_app(
                 }
             )
 
-        rows.sort(key=lambda row: (row["parent"].lower(), row["display_name"].lower()))
+        sort_field, sort_direction = _parse_sort_params()
+        _sort_rows(rows, sort_field, sort_direction)
+        sort_links = _build_sort_links("locations_index", sort_field, sort_direction)
 
         error_key = request.args.get("error")
         error_message = None
@@ -148,6 +184,9 @@ def run_web_app(
             error=error_message,
             template_choices=template_choices,
             page_type="locations",
+            sort_field=sort_field,
+            sort_direction=sort_direction,
+            sort_links=sort_links,
         )
 
     @app.route("/locations/choose", methods=["POST"])
@@ -383,12 +422,9 @@ def run_web_app(
                 }
             )
 
-        rows.sort(
-            key=lambda row: (
-                row["parent"].lower(),
-                row["display_name"].lower(),
-            )
-        )
+        sort_field, sort_direction = _parse_sort_params()
+        _sort_rows(rows, sort_field, sort_direction)
+        sort_links = _build_sort_links("assets_index", sort_field, sort_direction)
 
         error_key = request.args.get("error")
         error_message = None
@@ -406,6 +442,9 @@ def run_web_app(
             error=error_message,
             template_choices=template_choices,
             page_type="assets",
+            sort_field=sort_field,
+            sort_direction=sort_direction,
+            sort_links=sort_links,
         )
 
     @app.route("/assets/choose", methods=["POST"])

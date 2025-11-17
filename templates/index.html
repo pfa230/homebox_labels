@@ -51,9 +51,42 @@
         <thead>
           <tr>
             <th style="width: 3rem">Pick</th>
-            <th style="width: 12%">ID</th>
-            <th>Name</th>
-            <th style="width: 18%">Parent</th>
+            {% set id_sort = 'ascending' if sort_field == 'id' and sort_direction == 'asc' else 'descending' if sort_field == 'id' else 'none' %}
+            <th style="width: 12%" aria-sort="{{ id_sort }}">
+              <a class="sortable{% if sort_field == 'id' %} active{% endif %}" href="{{ sort_links['id'] }}">
+                <span>ID</span>
+                {% if sort_field == 'id' %}
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ '↑' if sort_direction == 'asc' else '↓' }}
+                  </span>
+                  <span class="sr-only">Sorted {{ 'ascending' if sort_direction == 'asc' else 'descending' }}</span>
+                {% endif %}
+              </a>
+            </th>
+            {% set name_sort = 'ascending' if sort_field == 'name' and sort_direction == 'asc' else 'descending' if sort_field == 'name' else 'none' %}
+            <th aria-sort="{{ name_sort }}">
+              <a class="sortable{% if sort_field == 'name' %} active{% endif %}" href="{{ sort_links['name'] }}">
+                <span>Name</span>
+                {% if sort_field == 'name' %}
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ '↑' if sort_direction == 'asc' else '↓' }}
+                  </span>
+                  <span class="sr-only">Sorted {{ 'ascending' if sort_direction == 'asc' else 'descending' }}</span>
+                {% endif %}
+              </a>
+            </th>
+            {% set parent_sort = 'ascending' if sort_field == 'parent' and sort_direction == 'asc' else 'descending' if sort_field == 'parent' else 'none' %}
+            <th style="width: 18%" aria-sort="{{ parent_sort }}">
+              <a class="sortable{% if sort_field == 'parent' %} active{% endif %}" href="{{ sort_links['parent'] }}">
+                <span>Parent</span>
+                {% if sort_field == 'parent' %}
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ '↑' if sort_direction == 'asc' else '↓' }}
+                  </span>
+                  <span class="sr-only">Sorted {{ 'ascending' if sort_direction == 'asc' else 'descending' }}</span>
+                {% endif %}
+              </a>
+            </th>
             <th style="width: 22%">Labels</th>
             <th style="width: 30%">Description</th>
           </tr>
