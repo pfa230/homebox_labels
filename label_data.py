@@ -82,10 +82,18 @@ def split_name_content(name: str) -> Tuple[str, str]:
     """Split a location name into the id and the name."""
 
     text = location_display_text(name)
-    if " " not in text:
-        return text, text
-    display_id, name = text.split(" ", 1)
-    return display_id, name.strip()
+    if "|" not in text:
+        return "", text
+
+    display_id, _, remainder = text.partition("|")
+    display_id = display_id.strip()
+    cleaned_name = remainder.strip()
+
+    if not cleaned_name:
+        # Fall back to the original text if the portion after '|' is empty
+        cleaned_name = text.replace("|", " ").strip()
+
+    return display_id, cleaned_name
 
 
 def build_ui_url(base_ui: str, loc_id: str) -> str:
