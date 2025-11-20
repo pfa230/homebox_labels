@@ -129,3 +129,28 @@ def shrink_fit(
     ):
         size -= step
     return max(size, min_font)
+
+
+def center_baseline(
+    line_count: int,
+    font_size: float,
+    area_top: float,
+    area_bottom: float,
+    gap: float,
+) -> float:
+    """Return a baseline that vertically centers text inside the given area.
+
+    ``gap`` is the vertical space between lines (not including the line height).
+    """
+
+    if line_count <= 0 or area_top <= area_bottom:
+        return area_top
+
+    area_height = area_top - area_bottom
+    block_height = (line_count * font_size) + max(0, line_count - 1) * gap
+    offset = max((area_height - block_height) / 2.0, 0)
+    # Adjust the anchor downward by an approximate ascent to visually center the glyphs,
+    # since drawString treats the y coordinate as the baseline (not the top of the glyphs).
+    ascent_estimate = font_size * 0.7
+    baseline = area_top - offset - ascent_estimate
+    return max(area_bottom + font_size, min(baseline, area_top))

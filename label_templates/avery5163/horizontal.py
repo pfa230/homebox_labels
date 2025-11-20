@@ -21,7 +21,7 @@ from .common import (
     LABEL_W,
     QR_SIZE,
 )
-from ..utils import shrink_fit, wrap_text_to_width
+from ..utils import center_baseline, shrink_fit, wrap_text_to_width
 
 _FONTS = build_font_config(
     family="Inter",
@@ -92,8 +92,6 @@ def _render_col_1(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
 
 def _render_col_2(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
     content_row_y = LABEL_H * 3 / 4
-    info_row_y = LABEL_H / 2
-
     canvas_obj.line(COL_1_W, 0, COL_1_W, LABEL_H)
     canvas_obj.line(COL_1_W, content_row_y, LABEL_W, content_row_y)
 
@@ -115,25 +113,57 @@ def _render_col_2(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
         canvas_obj.setFont(_FONTS.content.font_name, content_size)
         canvas_obj.drawString(text_start_x, body_y, content_text)
 
-    info_y = info_row_y - LABEL_PADDING - _FONTS.label.size
+    panel_top = content_row_y - LABEL_PADDING
+    panel_bottom = LABEL_PADDING
+    panel_mid = panel_bottom + (panel_top - panel_bottom) / 2.0
+
     labels_text = ", ".join(content.labels).strip()
-    if labels_text and info_y >= _FONTS.label.size:
-        info_y = _draw_text_block(
+    if labels_text and panel_top > panel_bottom:
+        label_lines = list(
+            wrap_text_to_width(
+                text=labels_text,
+                font_name=LABEL_BOLD_FONT,
+                font_size=_FONTS.label.size,
+                max_width_pt=text_max_width,
+            )
+        )
+        baseline = center_baseline(
+            line_count=len(label_lines),
+            font_size=_FONTS.label.size,
+            area_top=panel_top,
+            area_bottom=panel_mid,
+            gap=LABEL_PADDING / 2.0,
+        )
+        _draw_text_block(
             canvas_obj,
             labels_text,
-            info_y,
+            baseline,
             text_start_x,
             text_max_width,
             LABEL_BOLD_FONT,
         )
-        info_y -= LABEL_PADDING / 2.0
 
     description = content.description.strip()
-    if description and info_y >= _FONTS.label.size:
+    if description and panel_mid > panel_bottom:
+        desc_lines = list(
+            wrap_text_to_width(
+                text=description,
+                font_name=LABEL_REG_FONT,
+                font_size=_FONTS.label.size,
+                max_width_pt=text_max_width,
+            )
+        )
+        baseline = center_baseline(
+            line_count=len(desc_lines),
+            font_size=_FONTS.label.size,
+            area_top=panel_mid,
+            area_bottom=panel_bottom,
+            gap=LABEL_PADDING / 2.0,
+        )
         _draw_text_block(
             canvas_obj,
             description,
-            info_y,
+            baseline,
             text_start_x,
             text_max_width,
             LABEL_REG_FONT,
