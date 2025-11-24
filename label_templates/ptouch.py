@@ -14,7 +14,6 @@ from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
 from label_types import LabelContent, LabelGeometry
-from label_templates.avery5163.common import QR_SIZE
 from .base import LabelTemplate, TemplateOption
 from .utils import shrink_fit, wrap_text_to_width_multiline
 
@@ -199,13 +198,12 @@ class Template(LabelTemplate):
                 font_name=_FONTS.content.font_name,
                 font_size=attempt_size,
                 max_width_pt=max_width,
-                max_lines=2,
+                max_height_pt=max_height,
                 min_font_size=MIN_FONT_SIZE_CONTENT,
                 step=step,
             )
             if lines:
-                if len(lines) * (chosen_size + TEXT_GAP) <= max_height:
-                    return lines, chosen_size
+                return lines[:2], chosen_size
                 attempt_size = chosen_size
 
             attempt_size -= step

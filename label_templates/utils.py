@@ -12,17 +12,17 @@ def wrap_text_to_width_multiline(
     font_name: str,
     font_size: float,
     max_width_pt: float,
-    max_lines: int,
+    max_height_pt: float,
     *,
     min_font_size: float | None = None,
     step: float = 0.5,
 ) -> tuple[List[str], float]:
-    """Wrap ``text`` to at most ``max_lines`` lines, adjusting font size.
+    """Wrap ``text`` to as many lines as fit width and optional height, adjusting font size.
 
     Returns ``(lines, chosen_font_size)``.
     """
 
-    if not text or max_width_pt <= 0 or max_lines <= 0:
+    if not text or max_width_pt <= 0 or max_height_pt <= 0:
         return [], font_size
 
     min_font = min_font_size if min_font_size is not None else font_size
@@ -30,6 +30,14 @@ def wrap_text_to_width_multiline(
 
     size = font_size
     while size >= min_font:
+        # Before hitting min_font, do not hard-wrap words; shrink instead.
+        words = text.split()
+        if words:
+            widest = max(stringWidth(w, font_name, size) for w in words)
+            if widest > max_width_pt and size > min_font:
+                size -= step
+                continue
+
         wrapped = list(
             wrap_text_to_width(
                 text=text,
@@ -39,27 +47,23 @@ def wrap_text_to_width_multiline(
             )
         )
 
-        if wrapped and len(wrapped) <= max_lines:
-            return wrapped, size
-
-        if max_lines == 2:
-            merged = " ".join(wrapped[1:])
-            if stringWidth(merged, font_name, size) <= max_width_pt:
-                return [wrapped[0], merged], size
+        if wrapped:
+            line_height_est = size * 1.2
+            if len(wrapped) * line_height_est <= max_height_pt:
+                return wrapped, size
         size -= step
 
-    final_size = min_font
-    final_lines = [text]
-    if max_lines > 1:
-        fallback_wrapped = list(
-            wrap_text_to_width(
-                text=text,
-                font_name=font_name,
-                font_size=final_size,
-                max_width_pt=max_width_pt,
-            )
+    # Fallback: allow hard wrap at min font size; if still empty, use original text
+    fallback_lines = list(
+        wrap_text_to_width(
+            text=text,
+            font_name=font_name,
+            font_size=min_font,
+            max_width_pt=max_width_pt,
         )
-        final_lines = fallback_wrapped[:max_lines] or [text]
+    ) or [text]
+    final_lines = fallback_lines
+    final_size = min_font
     return final_lines, final_size
 
 

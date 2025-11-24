@@ -120,7 +120,7 @@ def _render_row_2(canvas_obj: canvas.Canvas, content: LabelContent, top: float) 
             font_name=content_font.font_name,
             font_size=content_font.size,
             max_width_pt=width - 2 * VERT_LABEL_PADDING,
-            max_lines=2,
+            max_height_pt=region_height,
             min_font_size=max(content_font.size * 0.5, 8.0),
             step=0.5,
         )
@@ -154,12 +154,12 @@ def _render_row_3(canvas_obj: canvas.Canvas, content: LabelContent, height: floa
     width = LABEL_H
 
     info_cursor = height - VERT_SECTION_GAP
-    sections: list[tuple[str, int]] = [
-        (content.description.strip(), 3),
-        (", ".join(content.labels).strip(), 2),
+    sections: list[tuple[str, float]] = [
+        (content.description.strip(), info_cursor - VERT_SECTION_GAP),
+        (", ".join(content.labels).strip(), info_cursor - VERT_SECTION_GAP),
     ]
 
-    for text, max_lines in sections:
+    for text, max_height in sections:
         if not text:
             continue
         lines, line_size = wrap_text_to_width_multiline(
@@ -167,7 +167,7 @@ def _render_row_3(canvas_obj: canvas.Canvas, content: LabelContent, height: floa
             font_name=VERT_LABEL_FONT.font_name,
             font_size=VERT_LABEL_FONT.size,
             max_width_pt=width - 2 * VERT_LABEL_PADDING,
-            max_lines=max_lines,
+            max_height_pt=max_height,
             min_font_size=max(VERT_LABEL_FONT.size * 0.5, 8.0),
             step=0.5,
         )

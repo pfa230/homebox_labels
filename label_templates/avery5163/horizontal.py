@@ -7,7 +7,7 @@ from io import BytesIO
 import fitz
 import qrcode
 from reportlab.lib.utils import ImageReader
-from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfbase.pdfmetrics import getAscent, getDescent, stringWidth
 from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
@@ -21,7 +21,12 @@ from .common import (
     LABEL_W,
     QR_SIZE,
 )
-from ..utils import center_baseline, shrink_fit, wrap_text_to_width
+from ..utils import (
+    center_baseline,
+    shrink_fit,
+    wrap_text_to_width,
+    wrap_text_to_width_multiline,
+)
 
 _FONTS = build_font_config(
     family="Inter",
@@ -100,18 +105,29 @@ def _render_col_2(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
 
     content_text = content.name.strip()
     if content_text:
-        content_max = _FONTS.content.size
-        content_min = max(content_max * 0.5, 6.0)
-        content_size = shrink_fit(
-            content_text,
-            text_max_width,
-            max_font=content_max,
-            min_font=content_min,
+        max_height = LABEL_H - content_row_y - LABEL_PADDING
+        content_min = max(_FONTS.content.size * 0.5, 6.0)
+        lines, chosen_size = wrap_text_to_width_multiline(
+            text=content_text,
             font_name=_FONTS.content.font_name,
+            font_size=_FONTS.content.size,
+            max_width_pt=text_max_width,
+            max_height_pt=max_height,
+            min_font_size=content_min,
+            step=0.5,
         )
-        body_y = content_row_y + LABEL_PADDING
-        canvas_obj.setFont(_FONTS.content.font_name, content_size)
-        canvas_obj.drawString(text_start_x, body_y, content_text)
+        if lines:
+            ascent = getAscent(_FONTS.content.font_name) / 1000.0 * chosen_size
+            descent = abs(getDescent(_FONTS.content.font_name)) / 1000.0 * chosen_size
+            line_height = ascent + descent
+            block_height = len(lines) * line_height
+            region_top = LABEL_H - LABEL_PADDING
+            offset = max((max_height - block_height) / 2.0, 0.0)
+            baseline = region_top - offset - ascent
+            canvas_obj.setFont(_FONTS.content.font_name, chosen_size)
+            for line in lines:
+                canvas_obj.drawString(text_start_x, baseline, line)
+                baseline -= line_height
 
     panel_top = content_row_y - LABEL_PADDING
     panel_bottom = LABEL_PADDING
