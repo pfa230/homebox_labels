@@ -8,7 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import zipfile
-from typing import List
+from typing import Any, List
 
 from dotenv import load_dotenv
 from flask import (
@@ -89,11 +89,21 @@ def run_web_app(
 
         rows.sort(key=_key, reverse=sort_direction == "desc")
 
-    def _build_sort_links(endpoint: str, sort_field: str, sort_direction: str) -> dict[str, str]:
+    def _build_sort_links(
+        endpoint: str,
+        sort_field: str,
+        sort_direction: str,
+        **extra_params: str,
+    ) -> dict[str, str]:
         links: dict[str, str] = {}
         for field in sortable_fields:
             next_direction = "desc" if (field == sort_field and sort_direction == "asc") else "asc"
-            links[field] = url_for(endpoint, sort=field, direction=next_direction)
+            params: dict[str, Any] = {
+                "sort": field,
+                "direction": next_direction,
+                **{k: v for k, v in extra_params.items() if v},
+            }
+            links[field] = url_for(endpoint, **params)
         return links
 
     def _truncate(text: str, limit: int = 120) -> str:
@@ -151,9 +161,17 @@ def run_web_app(
         except Exception as exc:  # pragma: no cover - best effort message
             return Response(f"Failed to load locations: {exc}", status=500)
 
+        default_with_id = "1"
+        show_only_with_id = (
+            (request.args.get("with_id", default_with_id) or "").lower()
+            in {"1", "true", "yes", "on"}
+        )
+
         rows = []
         for loc in locations:
             if not loc.id:
+                continue
+            if show_only_with_id and not (loc.display_id or "").strip():
                 continue
             display_name = loc.name or "Unnamed"
             rows.append(
@@ -169,7 +187,12 @@ def run_web_app(
 
         sort_field, sort_direction = _parse_sort_params()
         _sort_rows(rows, sort_field, sort_direction)
-        sort_links = _build_sort_links("locations_index", sort_field, sort_direction)
+        sort_links = _build_sort_links(
+            "locations_index",
+            sort_field,
+            sort_direction,
+            with_id="1" if show_only_with_id else "",
+        )
 
         error_key = request.args.get("error")
         error_message = None
@@ -190,6 +213,7 @@ def run_web_app(
             sort_field=sort_field,
             sort_direction=sort_direction,
             sort_links=sort_links,
+            show_only_with_id=show_only_with_id,
         )
 
     @app.route("/locations/choose", methods=["POST"])

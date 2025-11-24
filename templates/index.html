@@ -34,6 +34,16 @@
     {% if error %}
       <div class="error">{{ error }}</div>
     {% endif %}
+    {% if page_type == 'locations' %}
+      <form method="get" action="{{ url_for('locations_index') }}" style="margin-bottom: 0.75rem;">
+        <label>
+          <input type="checkbox" name="with_id" value="1" {% if show_only_with_id %}checked{% endif %} onchange="this.form.submit()" />
+          Show only with ID
+        </label>
+        <input type="hidden" name="sort" value="{{ sort_field }}" />
+        <input type="hidden" name="direction" value="{{ sort_direction }}" />
+      </form>
+    {% endif %}
     <form method="post" action="{{ url_for('assets_choose' if page_type == 'assets' else 'locations_choose') }}">
       <div class="controls">
         <button type="submit" class="primary">Render Labels</button>
