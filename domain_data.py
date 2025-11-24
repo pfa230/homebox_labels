@@ -33,34 +33,6 @@ def _filter_locations_by_name(
     return [loc for loc in locations if name_re.search(loc.name or "")]
 
 
-def location_display_text(name: str) -> str:
-    """Normalize user-provided location names."""
-
-    return (
-        name.strip()
-        if isinstance(name, str) and name.strip()
-        else "Unnamed"
-    )
-
-
-def split_name_content(name: str) -> tuple[str, str]:
-    """Split a location name into the id and the name."""
-
-    text = location_display_text(name)
-    if "|" not in text:
-        return "", text
-
-    display_id, _, remainder = text.partition("|")
-    display_id = display_id.strip()
-    cleaned_name = remainder.strip()
-
-    if not cleaned_name:
-        # Fall back to the original text if the portion after '|' is empty
-        cleaned_name = text.replace("|", " ").strip()
-
-    return display_id, cleaned_name
-
-
 def collect_locations(
     api_manager: HomeboxApiManager,
     name_pattern: Optional[str],
