@@ -120,6 +120,10 @@ def collect_locations_label_contents(
 
     locations = api_manager.list_locations()
     filtered_locations = _filter_locations_by_name(locations, name_pattern)
+    filtered_locations.sort(
+        key=lambda loc: (loc.get("id") or ""),
+        reverse=True,
+    )
 
     return _build_location_label_contents(
         filtered_locations,
@@ -242,6 +246,11 @@ def collect_asset_label_contents(
             item for item in items
             if name_re.search((item.get("name") or "").strip())
         ]
+
+    items.sort(
+        key=lambda item: (item.get("id") or ""),
+        reverse=True,
+    )
 
     return _build_asset_label_contents(items, api_manager)
 

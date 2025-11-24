@@ -61,14 +61,17 @@ def run_web_app(
 
     sortable_fields = ("id", "name", "parent")
 
-    def _parse_sort_params(default_field: str = "parent") -> tuple[str, str]:
+    def _parse_sort_params(
+        default_field: str = "id",
+        default_direction: str = "desc",
+    ) -> tuple[str, str]:
         sort_field = request.args.get("sort", default_field)
         if sort_field not in sortable_fields:
             sort_field = default_field
 
-        sort_direction = request.args.get("direction", "asc").lower()
+        sort_direction = request.args.get("direction", default_direction).lower()
         if sort_direction not in {"asc", "desc"}:
-            sort_direction = "asc"
+            sort_direction = default_direction
 
         return sort_field, sort_direction
 
