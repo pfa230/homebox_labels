@@ -8,7 +8,7 @@ from typing import Optional, Sequence
 from dotenv import load_dotenv
 
 from homebox_api import HomeboxApiManager
-from label_data import collect_locations_label_contents
+from label_templates.label_data import collect_locations_label_contents
 from label_generation import render
 from label_templates import get_template
 

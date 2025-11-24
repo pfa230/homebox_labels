@@ -25,11 +25,12 @@ from werkzeug.wrappers import Response
 
 from homebox_api import HomeboxApiManager
 from label_types import LabelContent
-from label_data import (
+from label_templates.label_data import (
     collect_locations_label_contents,
     collect_asset_label_contents,
     collect_label_contents_by_ids,
 )
+from domain_data import collect_assets
 from label_generation import render
 from label_templates import get_template, list_templates
 
@@ -431,42 +432,23 @@ def run_web_app(
     @app.route("/assets", methods=["GET"])
     def assets_index() -> Response | str:
         try:
-            items = api_manager.list_items()
-            asset_labels = collect_asset_label_contents(api_manager, name_pattern=None)
+            assets = collect_assets(api_manager, name_pattern=None)
         except Exception as exc:  # pragma: no cover - best effort message
             return Response(f"Failed to load assets: {exc}", status=500)
-        asset_cache.clear()
-        asset_cache.update({al.id: al for al in asset_labels if al.id})
 
-        rows = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            item_id = (item.get("id") or "").strip()
-            if not item_id:
-                continue
-            location_name = ""
-            loc = item.get("location")
-            if isinstance(loc, dict):
-                location_name = (loc.get("name") or "").strip()
-            parent_asset_name = (item.get("parentName") or item.get("parent") or "").strip()
-            labels = item.get("labels") or []
-            label_names = [
-                (lbl.get("name") or "").strip()
-                for lbl in labels
-                if isinstance(lbl, dict)
-            ]
-            rows.append(
-                {
-                    "id": item_id,
-                    "display_id": (item.get("assetId") or "").strip(),
-                    "display_name": (item.get("name") or "").strip() or "Unnamed",
-                    "parent_asset": parent_asset_name,
-                    "location": location_name,
-                    "labels": _truncate(", ".join(label_names).strip(), 80),
-                    "description": _truncate((item.get("description") or "").strip(), 160),
-                }
-            )
+        rows = [
+            {
+                "id": asset.id,
+                "display_id": asset.display_id,
+                "display_name": asset.name or "Unnamed",
+                "parent_asset": asset.parent_asset,
+                "location": asset.location,
+                "labels": _truncate(", ".join(asset.labels).strip(), 80),
+                "description": _truncate(asset.description, 160),
+            }
+            for asset in assets
+            if asset.id
+        ]
 
         sort_field, sort_direction = _parse_sort_params(default_field="id")
         _sort_rows(rows, sort_field, sort_direction)

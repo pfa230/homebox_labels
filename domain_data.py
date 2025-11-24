@@ -1,24 +1,16 @@
-"""Helpers for building `LabelContent` collections from Homebox API data."""
+"""Domain-level data helpers (no LabelContent)."""
 
 from __future__ import annotations
 
 import re
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence
 
 from homebox_api import HomeboxApiManager
 from domain_types import Location, Asset
-from label_types import LabelContent
 
 __all__ = [
-    "collect_locations_label_contents",
-    "collect_label_contents_by_ids",
-    "collect_asset_label_contents",
     "collect_locations",
     "collect_assets",
-    "location_to_label_content",
-    "asset_to_label_content",
-    "build_ui_url",
-    "build_asset_ui_url",
     "build_location_paths",
     "location_display_text",
     "split_name_content",
@@ -83,7 +75,7 @@ def location_display_text(name: str) -> str:
     )
 
 
-def split_name_content(name: str) -> Tuple[str, str]:
+def split_name_content(name: str) -> tuple[str, str]:
     """Split a location name into the id and the name."""
 
     text = location_display_text(name)
@@ -101,46 +93,52 @@ def split_name_content(name: str) -> Tuple[str, str]:
     return display_id, cleaned_name
 
 
-def build_ui_url(base_ui: str, loc_id: str) -> str:
-    """Construct the dashboard URL for a location."""
-
-    if loc_id:
-        return f"{base_ui}/location/{loc_id}"
-    return f"{base_ui}/locations"
-
-
-def build_asset_ui_url(base_ui: str, item_id: str) -> str:
-    """Construct the dashboard URL for an asset/item."""
-
-    if item_id:
-        return f"{base_ui}/item/{item_id}"
-    return f"{base_ui}/items"
-
-
-def collect_locations_label_contents(
+def collect_locations(
     api_manager: HomeboxApiManager,
     name_pattern: Optional[str],
-) -> List[LabelContent]:
-    """Fetch locations and transform them into label-ready payloads."""
+) -> List[Location]:
+    """Fetch locations as domain objects."""
 
-    locations = collect_locations(api_manager, name_pattern)
-    return [location_to_label_content(loc, api_manager.base_url) for loc in locations]
+    locations = api_manager.list_locations()
+    filtered_locations = _filter_locations_by_name(locations, name_pattern)
+    filtered_locations.sort(
+        key=lambda loc: (loc.get("id") or ""),
+        reverse=True,
+    )
+
+    return _build_location_domain(
+        filtered_locations,
+        api_manager,
+    )
 
 
-def collect_label_contents_by_ids(
+def collect_assets(
     api_manager: HomeboxApiManager,
-    base_ui: str,
-    location_ids: Iterable[str],
-) -> List[LabelContent]:
-    """Return label payloads for the specified location ids."""
+    name_pattern: Optional[str],
+) -> List[Asset]:
+    """Fetch assets as domain objects."""
 
-    if not location_ids:
-        return []
+    items = api_manager.list_items()
 
-    locations = collect_locations(api_manager, None)
-    by_id = {loc.id: loc for loc in locations if loc.id}
-    ordered = [by_id[loc_id] for loc_id in location_ids if loc_id in by_id]
-    return [location_to_label_content(loc, base_ui) for loc in ordered]
+    if name_pattern:
+        try:
+            name_re = re.compile(name_pattern, re.IGNORECASE)
+        except re.error as exc:
+            raise SystemExit(
+                f"Invalid --name-pattern regex '{name_pattern}': {exc}"
+            ) from exc
+
+        items = [
+            item for item in items
+            if name_re.search((item.get("name") or "").strip())
+        ]
+
+    items.sort(
+        key=lambda item: (item.get("id") or ""),
+        reverse=True,
+    )
+
+    return _build_asset_domain(items)
 
 
 def _build_location_domain(
@@ -208,64 +206,6 @@ def _location_to_domain(
     )
 
 
-def collect_asset_label_contents(
-    api_manager: HomeboxApiManager,
-    name_pattern: Optional[str],
-) -> List[LabelContent]:
-    """Fetch assets and transform them into label-ready payloads."""
-
-    assets = collect_assets(api_manager, name_pattern)
-    return [asset_to_label_content(asset, api_manager.base_url) for asset in assets]
-
-
-def collect_locations(
-    api_manager: HomeboxApiManager,
-    name_pattern: Optional[str],
-) -> List[Location]:
-    """Fetch locations as domain objects."""
-
-    locations = api_manager.list_locations()
-    filtered_locations = _filter_locations_by_name(locations, name_pattern)
-    filtered_locations.sort(
-        key=lambda loc: (loc.get("id") or ""),
-        reverse=True,
-    )
-
-    return _build_location_domain(
-        filtered_locations,
-        api_manager,
-    )
-
-
-def collect_assets(
-    api_manager: HomeboxApiManager,
-    name_pattern: Optional[str],
-) -> List[Asset]:
-    """Fetch assets as domain objects."""
-
-    items = api_manager.list_items()
-
-    if name_pattern:
-        try:
-            name_re = re.compile(name_pattern, re.IGNORECASE)
-        except re.error as exc:
-            raise SystemExit(
-                f"Invalid --name-pattern regex '{name_pattern}': {exc}"
-            ) from exc
-
-        items = [
-            item for item in items
-            if name_re.search((item.get("name") or "").strip())
-        ]
-
-    items.sort(
-        key=lambda item: (item.get("id") or ""),
-        reverse=True,
-    )
-
-    return _build_asset_domain(items)
-
-
 def _build_asset_domain(
     items: Sequence[Dict],
 ) -> List[Asset]:
@@ -307,30 +247,4 @@ def _asset_to_domain(
         parent_asset=parent_asset_name,
         labels=label_names,
         description=(item.get("description") or "").strip(),
-    )
-
-
-def location_to_label_content(loc: Location, base_ui: str) -> LabelContent:
-    base_ui_clean = base_ui.rstrip("/")
-    return LabelContent(
-        display_id=loc.display_id,
-        name=loc.name,
-        url=build_ui_url(base_ui_clean, loc.id),
-        id=loc.id,
-        parent=loc.parent,
-        labels=loc.labels,
-        description=loc.description,
-    )
-
-
-def asset_to_label_content(asset: Asset, base_ui: str) -> LabelContent:
-    base_ui_clean = base_ui.rstrip("/")
-    return LabelContent(
-        display_id=asset.display_id,
-        name=asset.name,
-        url=build_asset_ui_url(base_ui_clean, asset.id),
-        id=asset.id,
-        parent=asset.location,
-        labels=asset.labels,
-        description=asset.description,
     )
