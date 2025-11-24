@@ -11,7 +11,7 @@ from reportlab.pdfbase.pdfmetrics import getAscent, getDescent, stringWidth
 from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
-from label_types import LabelContent
+from label_templates.label_types import LabelContent
 from .common import (
     COL_1_BOTTOM_PAD,
     COL_1_W,

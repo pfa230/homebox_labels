@@ -8,7 +8,7 @@ from typing import Sequence
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from label_types import LabelContent
+from label_templates.label_types import LabelContent
 from label_templates.base import LabelTemplate
 
 

@@ -13,7 +13,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 from fonts import FontSpec, build_font_config
-from label_types import LabelContent, LabelGeometry
+from label_templates.label_types import LabelContent, LabelGeometry
 from .base import LabelTemplate, TemplateOption
 from .utils import shrink_fit, wrap_text_to_width_multiline
 

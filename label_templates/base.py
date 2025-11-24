@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from label_types import LabelContent, LabelGeometry
+from label_templates.label_types import LabelContent, LabelGeometry
 
 
 @dataclass(frozen=True)

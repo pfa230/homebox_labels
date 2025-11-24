@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from homebox_api import HomeboxApiManager
 from label_templates.label_data import collect_locations_label_contents
-from label_generation import render
+from label_templates.label_generation import render
 from label_templates import get_template
 
 
@@ -41,14 +41,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         type=int,
         default=0,
         help="Number of labels to skip at start of first sheet",
-    )
-    parser.add_argument(
-        "-n", "--name-pattern",
-        default="box.*",
-        help=(
-            "Case-insensitive regex filter applied to location display names "
-            "(default: box.*)"
-        ),
     )
     parser.add_argument(
         "--base",
@@ -98,7 +90,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     template_name = args.template
-    template_options = _parse_template_options(args.template_option)
+    _parse_template_options(args.template_option)
 
     api_manager = HomeboxApiManager(
         base_url=args.base,
@@ -110,8 +102,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     labels = collect_locations_label_contents(
         api_manager,
-        args.base,
-        args.name_pattern,
+        None,
     )
     message = render(
         args.output,

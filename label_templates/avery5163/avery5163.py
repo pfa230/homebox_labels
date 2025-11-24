@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from label_types import LabelContent, LabelGeometry
+from label_templates.label_types import LabelContent, LabelGeometry
 from ..base import LabelTemplate, TemplateOption
 from .common import (
     COLS,

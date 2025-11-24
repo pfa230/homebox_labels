@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional
+from typing import Iterable, List
 
 from domain_data import collect_locations, collect_assets
 from domain_types import Location, Asset
 from homebox_api import HomeboxApiManager
-from label_types import LabelContent
+from label_templates.label_types import LabelContent
 
 __all__ = [
     "collect_locations_label_contents",
@@ -32,9 +32,8 @@ def build_asset_ui_url(base_ui: str, item_id: str) -> str:
 
 def collect_locations_label_contents(
     api_manager: HomeboxApiManager,
-    name_pattern: Optional[str],
 ) -> List[LabelContent]:
-    locations = collect_locations(api_manager, name_pattern)
+    locations = collect_locations(api_manager, None)
     return [location_to_label_content(loc, api_manager.base_url) for loc in locations]
 
 
@@ -54,9 +53,8 @@ def collect_label_contents_by_ids(
 
 def collect_asset_label_contents(
     api_manager: HomeboxApiManager,
-    name_pattern: Optional[str],
 ) -> List[LabelContent]:
-    assets = collect_assets(api_manager, name_pattern)
+    assets = collect_assets(api_manager, None)
     return [asset_to_label_content(asset, api_manager.base_url) for asset in assets]
 
 

@@ -24,14 +24,13 @@ from werkzeug.datastructures import ImmutableMultiDict
 from werkzeug.wrappers import Response
 
 from homebox_api import HomeboxApiManager
-from label_types import LabelContent
 from label_templates.label_data import (
     collect_locations_label_contents,
     collect_asset_label_contents,
     collect_label_contents_by_ids,
 )
 from domain_data import collect_assets
-from label_generation import render
+from label_templates.label_generation import render
 from label_templates import get_template, list_templates
 
 
@@ -54,11 +53,6 @@ def run_web_app(
     template_choices = list(list_templates())
     if not template_choices:
         raise RuntimeError("No label templates are registered.")
-
-    # Simple in-memory caches so we can reuse already-fetched payloads
-    # between the selection and options/generate steps without hitting the API again.
-    location_cache: dict[str, LabelContent] = {}
-    asset_cache: dict[str, LabelContent] = {}
 
     sortable_fields = ("id", "name", "parent", "location")
 
@@ -158,10 +152,7 @@ def run_web_app(
     @app.route("/locations", methods=["GET"])
     def locations_index() -> Response | str:
         try:
-            # Build label payloads once and cache by id for reuse in subsequent steps.
             locations = collect_locations_label_contents(api_manager, name_pattern=None)
-            location_cache.clear()
-            location_cache.update({loc.id: loc for loc in locations if loc.id})
         except Exception as exc:  # pragma: no cover - best effort message
             return Response(f"Failed to load locations: {exc}", status=500)
 
@@ -248,23 +239,14 @@ def run_web_app(
 
         skip_labels = int(request.form.get("skip", "0") or "0")
 
-        # Reuse cached label payloads instead of re-calling the API.
-        # If cache is empty (e.g., direct POST), fall back to targeted fetch.
-        label_contents = [
-            location_cache[loc_id]
-            for loc_id in selected_ids
-            if loc_id in location_cache
-        ]
-        if not label_contents:
-            try:
-                label_contents = collect_label_contents_by_ids(
-                    api_manager=api_manager,
-                    base_ui=base_ui,
-                    location_ids=selected_ids,
-                )
-                location_cache.update({lc.id: lc for lc in label_contents if lc.id})
-            except Exception as exc:  # pragma: no cover
-                return redirect(url_for("locations_index", error="generation", message=str(exc)))
+        try:
+            label_contents = collect_label_contents_by_ids(
+                api_manager=api_manager,
+                base_ui=base_ui,
+                location_ids=selected_ids,
+            )
+        except Exception as exc:  # pragma: no cover
+            return redirect(url_for("locations_index", error="generation", message=str(exc)))
 
         rows = []
         for label in label_contents:
@@ -319,12 +301,14 @@ def run_web_app(
         option_specs = template.available_options()
         option_names = [opt.name for opt in option_specs]
 
-        # Build the label list from cache (selected order)
-        labels = [
-            location_cache[loc_id]
-            for loc_id in selected_ids
-            if loc_id in location_cache
-        ]
+        try:
+            labels = collect_label_contents_by_ids(
+                api_manager=api_manager,
+                base_ui=base_ui,
+                location_ids=selected_ids,
+            )
+        except Exception as exc:  # pragma: no cover
+            return redirect(url_for("locations_index", error="generation", message=str(exc)))
         if not labels:
             return redirect(
                 url_for(
@@ -503,20 +487,11 @@ def run_web_app(
 
         skip_labels = int(request.form.get("skip", "0") or "0")
 
-        # Reuse cached asset labels; if empty, fall back to computing them
-        label_contents = [
-            asset_cache[item_id]
-            for item_id in selected_ids
-            if item_id in asset_cache
-        ]
-        if not label_contents:
-            try:
-                # Fallback: compute all assets and then filter (API hit only when needed)
-                computed = collect_asset_label_contents(api_manager, name_pattern=None)
-                asset_cache.update({al.id: al for al in computed if al.id})
-                label_contents = [asset_cache[i] for i in selected_ids if i in asset_cache]
-            except Exception as exc:  # pragma: no cover
-                return redirect(url_for("assets_index", error="generation", message=str(exc)))
+        try:
+            label_contents = collect_asset_label_contents(api_manager, name_pattern=None)
+            label_contents = [al for al in label_contents if al.id in selected_ids]
+        except Exception as exc:  # pragma: no cover
+            return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
         rows = []
         for label in label_contents:
@@ -571,12 +546,11 @@ def run_web_app(
         option_specs = template.available_options()
         option_names = [opt.name for opt in option_specs]
 
-        # Build the label list from cache (selected order)
-        labels = [
-            asset_cache[item_id]
-            for item_id in selected_ids
-            if item_id in asset_cache
-        ]
+        try:
+            labels = collect_asset_label_contents(api_manager, name_pattern=None)
+            labels = [al for al in labels if al.id in selected_ids]
+        except Exception as exc:  # pragma: no cover
+            return redirect(url_for("assets_index", error="generation", message=str(exc)))
         if not labels:
             return redirect(
                 url_for(
