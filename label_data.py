@@ -6,12 +6,17 @@ import re
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from homebox_api import HomeboxApiManager
+from domain_types import Location, Asset
 from label_types import LabelContent
 
 __all__ = [
     "collect_locations_label_contents",
     "collect_label_contents_by_ids",
     "collect_asset_label_contents",
+    "collect_locations",
+    "collect_assets",
+    "location_to_label_content",
+    "asset_to_label_content",
     "build_ui_url",
     "build_asset_ui_url",
     "build_location_paths",
@@ -118,17 +123,8 @@ def collect_locations_label_contents(
 ) -> List[LabelContent]:
     """Fetch locations and transform them into label-ready payloads."""
 
-    locations = api_manager.list_locations()
-    filtered_locations = _filter_locations_by_name(locations, name_pattern)
-    filtered_locations.sort(
-        key=lambda loc: (loc.get("id") or ""),
-        reverse=True,
-    )
-
-    return _build_location_label_contents(
-        filtered_locations,
-        api_manager,
-    )
+    locations = collect_locations(api_manager, name_pattern)
+    return [location_to_label_content(loc, api_manager.base_url) for loc in locations]
 
 
 def collect_label_contents_by_ids(
@@ -141,27 +137,16 @@ def collect_label_contents_by_ids(
     if not location_ids:
         return []
 
-    locations = api_manager.list_locations()
-    by_id = {
-        loc.get("id"): loc
-        for loc in locations
-        if isinstance(loc.get("id"), str)
-    }
-    ordered_locations = [
-        by_id[loc_id]
-        for loc_id in location_ids
-        if loc_id in by_id
-    ]
-    return _build_location_label_contents(
-        ordered_locations,
-        api_manager,
-    )
+    locations = collect_locations(api_manager, None)
+    by_id = {loc.id: loc for loc in locations if loc.id}
+    ordered = [by_id[loc_id] for loc_id in location_ids if loc_id in by_id]
+    return [location_to_label_content(loc, base_ui) for loc in ordered]
 
 
-def _build_location_label_contents(
+def _build_location_domain(
     locations: Sequence[Dict],
     api_manager: HomeboxApiManager,
-) -> List[LabelContent]:
+) -> List[Location]:
     valid_locations: List[Dict] = []
     loc_ids: List[str] = []
     for loc in locations:
@@ -178,27 +163,24 @@ def _build_location_label_contents(
     detail_map = api_manager.get_location_details(loc_ids)
     labels_map = api_manager.get_location_item_labels(loc_ids)
 
-    base_ui_clean = api_manager.base_url.rstrip("/")
     return [
-        _location_to_label_content(
+        _location_to_domain(
             loc,
             detail_map,
             labels_map,
             path_map,
-            base_ui_clean,
         )
         for loc in valid_locations
     ]
 
 
-def _location_to_label_content(
+def _location_to_domain(
     location: Dict,
     detail_map: Dict[str, Dict],
     labels_map: Dict[str, List[str]],
     path_map: Dict[str, List[str]],
-    base_ui: str,
-) -> LabelContent:
-    """Convert a single location payload into the printable label structure."""
+) -> Location:
+    """Convert a single location payload into domain object."""
 
     loc_id = location.get("id") or ""
     detail_payload = detail_map.get(loc_id, {})
@@ -215,14 +197,14 @@ def _location_to_label_content(
     path_list = path_map.get(loc_id, [])
     parent = path_list[-2] if len(path_list) >= 2 else ""
 
-    return LabelContent(
+    return Location(
+        id=loc_id,
         display_id=title,
         name=content,
-        url=build_ui_url(base_ui, loc_id),
-        id=loc_id,
         parent=parent,
         labels=label_names,
         description=description,
+        path=path_map.get(loc_id, []),
     )
 
 
@@ -231,6 +213,35 @@ def collect_asset_label_contents(
     name_pattern: Optional[str],
 ) -> List[LabelContent]:
     """Fetch assets and transform them into label-ready payloads."""
+
+    assets = collect_assets(api_manager, name_pattern)
+    return [asset_to_label_content(asset, api_manager.base_url) for asset in assets]
+
+
+def collect_locations(
+    api_manager: HomeboxApiManager,
+    name_pattern: Optional[str],
+) -> List[Location]:
+    """Fetch locations as domain objects."""
+
+    locations = api_manager.list_locations()
+    filtered_locations = _filter_locations_by_name(locations, name_pattern)
+    filtered_locations.sort(
+        key=lambda loc: (loc.get("id") or ""),
+        reverse=True,
+    )
+
+    return _build_location_domain(
+        filtered_locations,
+        api_manager,
+    )
+
+
+def collect_assets(
+    api_manager: HomeboxApiManager,
+    name_pattern: Optional[str],
+) -> List[Asset]:
+    """Fetch assets as domain objects."""
 
     items = api_manager.list_items()
 
@@ -252,52 +263,30 @@ def collect_asset_label_contents(
         reverse=True,
     )
 
-    return _build_asset_label_contents(items, api_manager)
+    return _build_asset_domain(items)
 
 
-def _build_asset_label_contents(
+def _build_asset_domain(
     items: Sequence[Dict],
-    api_manager: HomeboxApiManager,
-) -> List[LabelContent]:
+) -> List[Asset]:
     valid_items: List[Dict] = []
-    item_ids: List[str] = []
     for item in items:
         item_id = item.get("id")
         if isinstance(item_id, str):
             valid_items.append(item)
-            item_ids.append(item_id)
 
-    if not item_ids:
+    if not valid_items:
         return []
 
-    # detail_map = api_manager.get_item_details(item_ids)
-    base_ui_clean = api_manager.base_url.rstrip("/")
-
-    return [
-        _asset_to_label_content(item,
-                                # detail_map,
-                                base_ui_clean)
-        for item in valid_items
-    ]
+    return [_asset_to_domain(item) for item in valid_items]
 
 
-def _asset_to_label_content(
+def _asset_to_domain(
     item: Dict,
-    # detail_map: Dict[str, Dict],
-    base_ui: str,
-) -> LabelContent:
-    """Convert a single item payload into the printable label structure."""
-    print("!!!", item)
+) -> Asset:
+    """Convert a single item payload into domain object."""
     item_id = item.get("id") or ""
-    # detail_payload = detail_map.get(item_id, {})
 
-    # description = (
-    #     detail_payload.get("description")
-    #     or item.get("description")
-    #     or ""
-    # ).strip()
-
-    # Get labels from the item
     labels = item.get("labels", [])
     label_names = [
         (label.get("name") or "").strip()
@@ -305,16 +294,43 @@ def _asset_to_label_content(
         if isinstance(label, dict)
     ]
 
-    # Get location name for parent
     location = item.get("location", {})
     location_name = (location.get("name") or "").strip() if isinstance(location, dict) else ""
 
-    return LabelContent(
+    parent_asset_name = (item.get("parentName") or item.get("parent") or "").strip()
+
+    return Asset(
+        id=item_id,
         display_id=item.get("assetId", ""),
         name=item.get("name", ""),
-        url=build_asset_ui_url(base_ui, item_id),
-        id=item_id,
-        parent=location_name,
+        location=location_name,
+        parent_asset=parent_asset_name,
         labels=label_names,
-        description=item.get("description", ""),
+        description=(item.get("description") or "").strip(),
+    )
+
+
+def location_to_label_content(loc: Location, base_ui: str) -> LabelContent:
+    base_ui_clean = base_ui.rstrip("/")
+    return LabelContent(
+        display_id=loc.display_id,
+        name=loc.name,
+        url=build_ui_url(base_ui_clean, loc.id),
+        id=loc.id,
+        parent=loc.parent,
+        labels=loc.labels,
+        description=loc.description,
+    )
+
+
+def asset_to_label_content(asset: Asset, base_ui: str) -> LabelContent:
+    base_ui_clean = base_ui.rstrip("/")
+    return LabelContent(
+        display_id=asset.display_id,
+        name=asset.name,
+        url=build_asset_ui_url(base_ui_clean, asset.id),
+        id=asset.id,
+        parent=asset.location,
+        labels=asset.labels,
+        description=asset.description,
     )
