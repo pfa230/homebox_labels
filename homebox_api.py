@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Set
 
+from domain_types import Location, Asset
+
 from homebox_client import ApiClient, Configuration
 from homebox_client.api.authentication_api import AuthenticationApi
 from homebox_client.api.locations_api import LocationsApi
@@ -41,13 +43,52 @@ class HomeboxApiManager:
 
         return self._api_client
 
-    def list_locations(self) -> List[Dict]:
-        """Return the flat list of available locations."""
+    def list_locations(self) -> List[Location]:
+        """Return locations as domain objects."""
 
-        locations = self._locations_api.v1_locations_get(
+        locations_raw = self._locations_api.v1_locations_get(
             _request_timeout=self.timeout
         ) or []
-        return [location.to_dict() for location in locations]
+        if not locations_raw:
+            return []
+        loc_ids = [
+            loc.id
+            for loc in locations_raw
+            if isinstance(getattr(loc, "id", None), str) and getattr(loc, "id")
+        ]
+        detail_map: Dict[str, Dict] = self.get_location_details(loc_ids)
+        tree = self.get_location_tree()
+        path_map = _build_location_paths(tree)
+        labels_map = self.get_location_item_labels(loc_ids)
+
+        domain: List[Location] = []
+        for loc in locations_raw:
+            loc_id = getattr(loc, "id", "") or ""
+            detail_payload = detail_map.get(loc_id, {})
+            description = (
+                detail_payload.get("description")
+                or getattr(loc, "description", "")
+                or ""
+            ).strip()
+            label_names = labels_map.get(loc_id, [])
+
+            title, content = _split_name_content(getattr(loc, "name", "") or "")
+
+            path_list = path_map.get(loc_id, [])
+            parent = path_list[-2] if len(path_list) >= 2 else ""
+
+            domain.append(
+                Location(
+                    id=loc_id,
+                    display_id=title,
+                    name=content,
+                    parent=parent,
+                    labels=label_names,
+                    description=description,
+                    path=path_map.get(loc_id, []),
+                )
+            )
+        return domain
 
     def get_location_tree(self) -> List[Dict]:
         """Return the hierarchical tree of locations."""
@@ -93,10 +134,10 @@ class HomeboxApiManager:
             )
         return labels_map
 
-    def list_items(self, page_size: int = 100) -> List[Dict]:
-        """Return the list of all items/assets."""
+    def list_items(self, page_size: int = 100) -> List[Asset]:
+        """Return assets as domain objects."""
 
-        items = []
+        items: List[Asset] = []
         page = 1
         while True:
             response = self._items_api.v1_items_get(
@@ -105,7 +146,7 @@ class HomeboxApiManager:
                 _request_timeout=self.timeout,
             )
             page_items = response.items or []
-            items.extend([item.to_dict() for item in page_items])
+            items.extend(self._convert_items(page_items))
 
             total = response.total or 0
             if not page_items or len(page_items) < page_size:
@@ -115,6 +156,34 @@ class HomeboxApiManager:
             page += 1
 
         return items
+
+    def _convert_items(self, items_raw) -> List[Asset]:
+        assets: List[Asset] = []
+        for item in items_raw or []:
+            item_id = getattr(item, "id", "") or ""
+            label_names = []
+            for lbl in getattr(item, "labels", None) or []:
+                name = (getattr(lbl, "name", "") or "").strip()
+                if name:
+                    label_names.append(name)
+            loc = getattr(item, "location", None)
+            location_name = (getattr(loc, "name", "") or "").strip() if loc else ""
+            parent_asset_name = (
+                (getattr(item, "parent_name", None) or getattr(item, "parent", None) or "")
+                or ""
+            )
+            assets.append(
+                Asset(
+                    id=item_id,
+                    display_id=getattr(item, "asset_id", "") or "",
+                    name=getattr(item, "name", "") or "",
+                    location=location_name,
+                    parent_asset=parent_asset_name.strip(),
+                    labels=label_names,
+                    description=(getattr(item, "description", "") or "").strip(),
+                )
+            )
+        return assets
 
     def get_item_detail(self, item_id: str) -> Dict:
         """Fetch detail payload for a specific item."""
@@ -167,21 +236,54 @@ class HomeboxApiManager:
 
         return sorted(collected, key=str.casefold)
 
-    def _create_authenticated_client(self, base_url: str) -> ApiClient:
-        """Authenticate against the Homebox API and return a ready client."""
 
-        api_base = f"{base_url}/api"
-        configuration = Configuration(host=api_base)
-        api_client = ApiClient(configuration)
-        auth_api = AuthenticationApi(api_client)
-        token_response = auth_api.v1_users_login_post(
-            username=self.username,
-            password=self.password,
-            stay_logged_in=True,
-        )
+def _create_authenticated_client(self, base_url: str) -> ApiClient:
+    """Authenticate against the Homebox API and return a ready client."""
 
-        token = token_response.token
-        if not token:
-            raise RuntimeError("Login succeeded but did not return a token.")
-        configuration.api_key["Bearer"] = token
-        return ApiClient(configuration)
+    api_base = f"{base_url}/api"
+    configuration = Configuration(host=api_base)
+    api_client = ApiClient(configuration)
+    auth_api = AuthenticationApi(api_client)
+    token_response = auth_api.v1_users_login_post(
+        username=self.username,
+        password=self.password,
+        stay_logged_in=True,
+    )
+
+    token = token_response.token
+    if not token:
+        raise RuntimeError("Login succeeded but did not return a token.")
+    configuration.api_key["Bearer"] = token
+    return ApiClient(configuration)
+
+
+def _build_location_paths(tree: List[Dict]) -> Dict[str, List[str]]:
+    paths: Dict[str, List[str]] = {}
+
+    def walk(node: Dict, ancestors: List[str]) -> None:
+        if not isinstance(node, dict):
+            return
+        node_type = (node.get("type") or node.get("nodeType") or "").lower()
+        if node_type and node_type != "location":
+            return
+        name = (node.get("name") or "").strip() or "Unnamed"
+        current_path = ancestors + [name]
+        loc_id = node.get("id")
+        if loc_id:
+            paths[loc_id] = current_path
+        for child in node.get("children") or []:
+            walk(child, current_path)
+
+    for root in tree or []:
+        walk(root, [])
+    return paths
+
+
+def _split_name_content(name: str) -> tuple[str, str]:
+    text = (name or "").strip()
+    if "|" not in text:
+        return "", text
+    display_id, _, remainder = text.partition("|")
+    display_id = display_id.strip()
+    cleaned_name = remainder.strip() or text.replace("|", " ").strip()
+    return display_id, cleaned_name

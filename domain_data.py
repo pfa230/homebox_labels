@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Sequence
+from typing import List, Optional, Sequence
 
 from homebox_api import HomeboxApiManager
 from domain_types import Location, Asset
@@ -11,16 +11,13 @@ from domain_types import Location, Asset
 __all__ = [
     "collect_locations",
     "collect_assets",
-    "build_location_paths",
-    "location_display_text",
-    "split_name_content",
 ]
 
 
 def _filter_locations_by_name(
-    locations: Sequence[Dict],
+    locations: Sequence[Location],
     pattern: Optional[str],
-) -> List[Dict]:
+) -> List[Location]:
     """Apply the name regex filter declared by the user."""
 
     if not pattern:
@@ -33,36 +30,7 @@ def _filter_locations_by_name(
             f"Invalid --name-pattern regex '{pattern}': {exc}"
         ) from exc
 
-    filtered = []
-    for loc in locations:
-        name = location_display_text(loc.get("name", ""))
-        if name_re.search(name):
-            filtered.append(loc)
-    return filtered
-
-
-def build_location_paths(tree: Sequence[Dict]) -> Dict[str, List[str]]:
-    """Map location ids to their breadcrumb path within the tree."""
-
-    paths: Dict[str, List[str]] = {}
-
-    def walk(node: Dict, ancestors: List[str]) -> None:
-        if not isinstance(node, dict):
-            return
-        node_type = (node.get("type") or node.get("nodeType") or "").lower()
-        if node_type and node_type != "location":
-            return
-        name = (node.get("name") or "").strip() or "Unnamed"
-        current_path = ancestors + [name]
-        loc_id = node.get("id")
-        if loc_id:
-            paths[loc_id] = current_path
-        for child in node.get("children") or []:
-            walk(child, current_path)
-
-    for root in tree or []:
-        walk(root, [])
-    return paths
+    return [loc for loc in locations if name_re.search(loc.name or "")]
 
 
 def location_display_text(name: str) -> str:
@@ -102,14 +70,11 @@ def collect_locations(
     locations = api_manager.list_locations()
     filtered_locations = _filter_locations_by_name(locations, name_pattern)
     filtered_locations.sort(
-        key=lambda loc: (loc.get("id") or ""),
+        key=lambda loc: (loc.id if isinstance(loc, Location) else loc.get("id", "")),
         reverse=True,
     )
 
-    return _build_location_domain(
-        filtered_locations,
-        api_manager,
-    )
+    return list(filtered_locations)
 
 
 def collect_assets(
@@ -130,121 +95,9 @@ def collect_assets(
 
         items = [
             item for item in items
-            if name_re.search((item.get("name") or "").strip())
+            if name_re.search((item.name or "").strip())
         ]
 
-    items.sort(
-        key=lambda item: (item.get("id") or ""),
-        reverse=True,
-    )
+    items.sort(key=lambda item: (item.id or ""), reverse=True)
 
-    return _build_asset_domain(items)
-
-
-def _build_location_domain(
-    locations: Sequence[Dict],
-    api_manager: HomeboxApiManager,
-) -> List[Location]:
-    valid_locations: List[Dict] = []
-    loc_ids: List[str] = []
-    for loc in locations:
-        loc_id = loc.get("id")
-        if isinstance(loc_id, str):
-            valid_locations.append(loc)
-            loc_ids.append(loc_id)
-
-    if not loc_ids:
-        return []
-
-    tree = api_manager.get_location_tree()
-    path_map = build_location_paths(tree)
-    detail_map = api_manager.get_location_details(loc_ids)
-    labels_map = api_manager.get_location_item_labels(loc_ids)
-
-    return [
-        _location_to_domain(
-            loc,
-            detail_map,
-            labels_map,
-            path_map,
-        )
-        for loc in valid_locations
-    ]
-
-
-def _location_to_domain(
-    location: Dict,
-    detail_map: Dict[str, Dict],
-    labels_map: Dict[str, List[str]],
-    path_map: Dict[str, List[str]],
-) -> Location:
-    """Convert a single location payload into domain object."""
-
-    loc_id = location.get("id") or ""
-    detail_payload = detail_map.get(loc_id, {})
-    description = (
-        detail_payload.get("description")
-        or location.get("description")
-        or ""
-    ).strip()
-    label_names = labels_map.get(loc_id, [])
-
-    title, content = split_name_content(location.get("name") or "")
-
-    # Determine parent (immediate ancestor) from the computed path map
-    path_list = path_map.get(loc_id, [])
-    parent = path_list[-2] if len(path_list) >= 2 else ""
-
-    return Location(
-        id=loc_id,
-        display_id=title,
-        name=content,
-        parent=parent,
-        labels=label_names,
-        description=description,
-        path=path_map.get(loc_id, []),
-    )
-
-
-def _build_asset_domain(
-    items: Sequence[Dict],
-) -> List[Asset]:
-    valid_items: List[Dict] = []
-    for item in items:
-        item_id = item.get("id")
-        if isinstance(item_id, str):
-            valid_items.append(item)
-
-    if not valid_items:
-        return []
-
-    return [_asset_to_domain(item) for item in valid_items]
-
-
-def _asset_to_domain(
-    item: Dict,
-) -> Asset:
-    """Convert a single item payload into domain object."""
-    item_id = item.get("id") or ""
-
-    labels = item.get("labels", [])
-    label_names = [
-        (label.get("name") or "").strip()
-        for label in labels
-        if isinstance(label, dict)
-    ]
-
-    location = item.get("location", {})
-    location_name = (location.get("name") or "").strip() if isinstance(location, dict) else ""
-
-    parent_asset_name = (item.get("parentName") or item.get("parent") or "").strip()
-
-    return Asset(
-        id=item_id,
-        display_id=item.get("assetId", ""),
-        name=item.get("name", ""),
-        location=location_name,
-        parent_asset=parent_asset_name,
-        labels=label_names,
-        description=(item.get("description") or "").strip(),
-    )
+    return list(items)

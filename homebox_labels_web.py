@@ -77,7 +77,7 @@ def run_web_app(
         return sort_field, sort_direction
 
     def _sort_rows(rows: list[dict[str, str]], sort_field: str, sort_direction: str) -> None:
-        def _key(row: dict[str, str]) -> tuple[str, str, str]:
+        def _key(row: dict[str, str]) -> tuple[str, str, str, str]:
             base_id = (row.get("display_id") or row.get("id") or "").lower()
             name = (row.get("display_name") or "").lower()
             parent = (row.get("parent") or "").lower()
