@@ -652,7 +652,14 @@ def run_web_app(
                 download_name="homebox_labels_png.zip",
             )
 
-    app.run(host=host, port=port, debug=False, use_reloader=False)
+    # Enable reloader so code changes auto-restart the dev server.
+    use_reloader_env = os.getenv("USE_RELOADER")
+    use_reloader = (
+        str(use_reloader_env).lower() in {"1", "true", "yes", "on"}
+        if use_reloader_env is not None
+        else True
+    )
+    app.run(host=host, port=port, debug=False, use_reloader=use_reloader)
 
 
 def main(argv=None):
