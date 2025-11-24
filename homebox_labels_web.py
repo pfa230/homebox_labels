@@ -24,12 +24,11 @@ from werkzeug.datastructures import ImmutableMultiDict
 from werkzeug.wrappers import Response
 
 from homebox_api import HomeboxApiManager
+from domain_data import collect_locations, collect_assets
 from label_templates.label_data import (
-    collect_locations_label_contents,
-    collect_asset_label_contents,
-    collect_label_contents_by_ids,
+    locations_to_label_contents,
+    assets_to_label_contents,
 )
-from domain_data import collect_assets
 from label_templates.label_generation import render
 from label_templates import get_template, list_templates
 
@@ -152,7 +151,7 @@ def run_web_app(
     @app.route("/locations", methods=["GET"])
     def locations_index() -> Response | str:
         try:
-            locations = collect_locations_label_contents(api_manager, name_pattern=None)
+            locations = collect_locations(api_manager, name_pattern=None)
         except Exception as exc:  # pragma: no cover - best effort message
             return Response(f"Failed to load locations: {exc}", status=500)
 
@@ -240,11 +239,10 @@ def run_web_app(
         skip_labels = int(request.form.get("skip", "0") or "0")
 
         try:
-            label_contents = collect_label_contents_by_ids(
-                api_manager=api_manager,
-                base_ui=base_ui,
-                location_ids=selected_ids,
-            )
+            locs = collect_locations(api_manager, name_pattern=None)
+            loc_by_id = {loc.id: loc for loc in locs}
+            ordered = [loc_by_id[loc_id] for loc_id in selected_ids if loc_id in loc_by_id]
+            label_contents = locations_to_label_contents(ordered, base_ui)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("locations_index", error="generation", message=str(exc)))
 
@@ -302,11 +300,10 @@ def run_web_app(
         option_names = [opt.name for opt in option_specs]
 
         try:
-            labels = collect_label_contents_by_ids(
-                api_manager=api_manager,
-                base_ui=base_ui,
-                location_ids=selected_ids,
-            )
+            locs = collect_locations(api_manager, name_pattern=None)
+            loc_by_id = {loc.id: loc for loc in locs}
+            ordered = [loc_by_id[loc_id] for loc_id in selected_ids if loc_id in loc_by_id]
+            labels = locations_to_label_contents(ordered, base_ui)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("locations_index", error="generation", message=str(exc)))
         if not labels:
@@ -488,8 +485,9 @@ def run_web_app(
         skip_labels = int(request.form.get("skip", "0") or "0")
 
         try:
-            label_contents = collect_asset_label_contents(api_manager, name_pattern=None)
-            label_contents = [al for al in label_contents if al.id in selected_ids]
+            assets = collect_assets(api_manager, name_pattern=None)
+            assets = [a for a in assets if a.id in selected_ids]
+            label_contents = assets_to_label_contents(assets, api_manager.base_url)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
@@ -547,8 +545,9 @@ def run_web_app(
         option_names = [opt.name for opt in option_specs]
 
         try:
-            labels = collect_asset_label_contents(api_manager, name_pattern=None)
-            labels = [al for al in labels if al.id in selected_ids]
+            assets = collect_assets(api_manager, name_pattern=None)
+            assets = [a for a in assets if a.id in selected_ids]
+            labels = assets_to_label_contents(assets, api_manager.base_url)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("assets_index", error="generation", message=str(exc)))
         if not labels:

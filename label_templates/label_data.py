@@ -1,18 +1,15 @@
-"""LabelContent converters and collectors built on domain types."""
+"""LabelContent converters built on domain types."""
 
 from __future__ import annotations
 
 from typing import Iterable, List
 
-from domain_data import collect_locations, collect_assets
 from domain_types import Location, Asset
-from homebox_api import HomeboxApiManager
 from label_templates.label_types import LabelContent
 
 __all__ = [
-    "collect_locations_label_contents",
-    "collect_label_contents_by_ids",
-    "collect_asset_label_contents",
+    "locations_to_label_contents",
+    "assets_to_label_contents",
     "location_to_label_content",
     "asset_to_label_content",
 ]
@@ -30,32 +27,20 @@ def build_asset_ui_url(base_ui: str, item_id: str) -> str:
     return f"{base_ui}/items"
 
 
-def collect_locations_label_contents(
-    api_manager: HomeboxApiManager,
-) -> List[LabelContent]:
-    locations = collect_locations(api_manager, None)
-    return [location_to_label_content(loc, api_manager.base_url) for loc in locations]
-
-
-def collect_label_contents_by_ids(
-    api_manager: HomeboxApiManager,
+def locations_to_label_contents(
+    locations: Iterable[Location],
     base_ui: str,
-    location_ids: Iterable[str],
 ) -> List[LabelContent]:
-    if not location_ids:
-        return []
-
-    locations = collect_locations(api_manager, None)
-    by_id = {loc.id: loc for loc in locations if loc.id}
-    ordered = [by_id[loc_id] for loc_id in location_ids if loc_id in by_id]
-    return [location_to_label_content(loc, base_ui) for loc in ordered]
+    base_ui_clean = base_ui.rstrip("/")
+    return [location_to_label_content(loc, base_ui_clean) for loc in locations]
 
 
-def collect_asset_label_contents(
-    api_manager: HomeboxApiManager,
+def assets_to_label_contents(
+    assets: Iterable[Asset],
+    base_ui: str,
 ) -> List[LabelContent]:
-    assets = collect_assets(api_manager, None)
-    return [asset_to_label_content(asset, api_manager.base_url) for asset in assets]
+    base_ui_clean = base_ui.rstrip("/")
+    return [asset_to_label_content(asset, base_ui_clean) for asset in assets]
 
 
 def location_to_label_content(loc: Location, base_ui: str) -> LabelContent:
