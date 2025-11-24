@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Homebox Label Generator - Locations</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/main.css') }}"
+    />
+    <script>
+      function toggleAll(state) {
+        const boxes = document.querySelectorAll('input[name="location_id"]');
+        boxes.forEach((cb) => {
+          cb.checked = state;
+        });
+      }
+      function invertSelection() {
+        const boxes = document.querySelectorAll('input[name="location_id"]');
+        boxes.forEach((cb) => {
+          cb.checked = !cb.checked;
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Homebox Label Generator - Locations</h1>
+    <div style="margin-bottom: 1rem;">
+      <a href="{{ url_for('assets_index') }}" style="color: #2563eb; text-decoration: none;">Switch to Assets →</a>
+    </div>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="get" action="{{ url_for('locations_index') }}" style="margin-bottom: 0.75rem;">
+      <label>
+        <input type="checkbox" name="with_id" value="1" {% if show_only_with_id %}checked{% endif %} onchange="this.form.submit()" />
+        Show only with ID
+      </label>
+      <input type="hidden" name="sort" value="{{ sort_field }}" />
+      <input type="hidden" name="direction" value="{{ sort_direction }}" />
+    </form>
+    <form method="post" action="{{ url_for('locations_choose') }}">
+      <div class="controls">
+        <button type="submit" class="primary">Render Labels</button>
+        <button type="button" class="secondary" onclick="toggleAll(true)">
+          Select All
+        </button>
+        <button type="button" class="secondary" onclick="toggleAll(false)">
+          Clear
+        </button>
+        <button type="button" class="secondary" onclick="invertSelection()">
+          Invert
+        </button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 3rem">Pick</th>
+            {% set id_sort = 'ascending' if sort_field == 'id' and sort_direction == 'asc' else 'descending' if sort_field == 'id' else 'none' %}
+            <th style="width: 12%" aria-sort="{{ id_sort }}">
+              <a class="sortable{% if sort_field == 'id' %} active{% endif %}" href="{{ sort_links['id'] }}">
+                <span>ID</span>
+                {% if sort_field == 'id' %}
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ '↑' if sort_direction == 'asc' else '↓' }}
+                  </span>
+                  <span class="sr-only">Sorted {{ 'ascending' if sort_direction == 'asc' else 'descending' }}</span>
+                {% endif %}
+              </a>
+            </th>
+            {% set name_sort = 'ascending' if sort_field == 'name' and sort_direction == 'asc' else 'descending' if sort_field == 'name' else 'none' %}
+            <th aria-sort="{{ name_sort }}">
+              <a class="sortable{% if sort_field == 'name' %} active{% endif %}" href="{{ sort_links['name'] }}">
+                <span>Name</span>
+                {% if sort_field == 'name' %}
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ '↑' if sort_direction == 'asc' else '↓' }}
+                  </span>
+                  <span class="sr-only">Sorted {{ 'ascending' if sort_direction == 'asc' else 'descending' }}</span>
+                {% endif %}
+              </a>
+            </th>
+            {% set parent_sort = 'ascending' if sort_field == 'parent' and sort_direction == 'asc' else 'descending' if sort_field == 'parent' else 'none' %}
+            <th style="width: 18%" aria-sort="{{ parent_sort }}">
+              <a class="sortable{% if sort_field == 'parent' %} active{% endif %}" href="{{ sort_links['parent'] }}">
+                <span>Parent</span>
+                {% if sort_field == 'parent' %}
+                  <span class="sort-indicator" aria-hidden="true">
+                    {{ '↑' if sort_direction == 'asc' else '↓' }}
+                  </span>
+                  <span class="sr-only">Sorted {{ 'ascending' if sort_direction == 'asc' else 'descending' }}</span>
+                {% endif %}
+              </a>
+            </th>
+            <th style="width: 22%">Labels</th>
+            <th style="width: 30%">Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for loc in locations %}
+            <tr>
+              <td>
+                <input type="checkbox" name="location_id" value="{{ loc.id }}" />
+              </td>
+              <td>
+                {% if loc.display_id %}
+                  <div class="meta">{{ loc.display_id }}</div>
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              <td>
+                <div><strong>{{ loc.display_name }}</strong></div>
+              </td>
+              <td>
+                {% if loc.parent %}
+                  <div class="path">{{ loc.parent }}</div>
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              <td>
+                {% if loc.labels %}
+                  <div class="meta">{{ loc.labels }}</div>
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              <td>
+                {% if loc.description %}
+                  {{ loc.description }}
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </form>
+  </body>
+</html>

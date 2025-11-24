@@ -59,7 +59,7 @@ def run_web_app(
     location_cache: dict[str, LabelContent] = {}
     asset_cache: dict[str, LabelContent] = {}
 
-    sortable_fields = ("id", "name", "parent")
+    sortable_fields = ("id", "name", "parent", "location")
 
     def _parse_sort_params(
         default_field: str = "id",
@@ -80,12 +80,15 @@ def run_web_app(
             base_id = (row.get("display_id") or row.get("id") or "").lower()
             name = (row.get("display_name") or "").lower()
             parent = (row.get("parent") or "").lower()
+            location = (row.get("location") or "").lower()
 
             if sort_field == "id":
-                return (base_id, name, parent)
+                return (base_id, name, parent, location)
             if sort_field == "name":
-                return (name, parent, base_id)
-            return (parent, name, base_id)
+                return (name, parent, location, base_id)
+            if sort_field == "location":
+                return (location, name, parent, base_id)
+            return (parent, name, location, base_id)
 
         rows.sort(key=_key, reverse=sort_direction == "desc")
 
@@ -205,11 +208,10 @@ def run_web_app(
             )
 
         return render_template(
-            "index.html",
+            "locations.html",
             locations=rows,
             error=error_message,
             template_choices=template_choices,
-            page_type="locations",
             sort_field=sort_field,
             sort_direction=sort_direction,
             sort_links=sort_links,
@@ -428,8 +430,8 @@ def run_web_app(
     # Asset routes
     @app.route("/assets", methods=["GET"])
     def assets_index() -> Response | str:
-        # Build asset label payloads once and cache by id
         try:
+            items = api_manager.list_items()
             asset_labels = collect_asset_label_contents(api_manager, name_pattern=None)
         except Exception as exc:  # pragma: no cover - best effort message
             return Response(f"Failed to load assets: {exc}", status=500)
@@ -437,19 +439,36 @@ def run_web_app(
         asset_cache.update({al.id: al for al in asset_labels if al.id})
 
         rows = []
-        for al in asset_labels:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_id = (item.get("id") or "").strip()
+            if not item_id:
+                continue
+            location_name = ""
+            loc = item.get("location")
+            if isinstance(loc, dict):
+                location_name = (loc.get("name") or "").strip()
+            parent_asset_name = (item.get("parentName") or item.get("parent") or "").strip()
+            labels = item.get("labels") or []
+            label_names = [
+                (lbl.get("name") or "").strip()
+                for lbl in labels
+                if isinstance(lbl, dict)
+            ]
             rows.append(
                 {
-                    "id": al.id,
-                    "display_id": (al.display_id or "").strip(),
-                    "display_name": (al.name or "").strip() or "Unnamed",
-                    "parent": (al.parent or "").strip(),
-                    "labels": _truncate(", ".join(al.labels).strip(), 80),
-                    "description": _truncate(al.description.strip(), 160),
+                    "id": item_id,
+                    "display_id": (item.get("assetId") or "").strip(),
+                    "display_name": (item.get("name") or "").strip() or "Unnamed",
+                    "parent_asset": parent_asset_name,
+                    "location": location_name,
+                    "labels": _truncate(", ".join(label_names).strip(), 80),
+                    "description": _truncate((item.get("description") or "").strip(), 160),
                 }
             )
 
-        sort_field, sort_direction = _parse_sort_params()
+        sort_field, sort_direction = _parse_sort_params(default_field="id")
         _sort_rows(rows, sort_field, sort_direction)
         sort_links = _build_sort_links("assets_index", sort_field, sort_direction)
 
@@ -464,11 +483,10 @@ def run_web_app(
             )
 
         return render_template(
-            "index.html",
-            locations=rows,
+            "assets.html",
+            assets=rows,
             error=error_message,
             template_choices=template_choices,
-            page_type="assets",
             sort_field=sort_field,
             sort_direction=sort_direction,
             sort_links=sort_links,
