@@ -58,7 +58,7 @@ class HomeboxApiManager:
                 loc_ids.append(loc_id)
         detail_map: Dict[str, Dict] = self.get_location_details(loc_ids)
         tree = self.get_location_tree()
-        path_map = _build_location_paths(tree)
+        path_map = self._build_location_paths(tree)
         labels_map = self.get_location_item_labels(loc_ids)
 
         domain: List[Location] = []
@@ -72,7 +72,7 @@ class HomeboxApiManager:
             ).strip()
             label_names = labels_map.get(loc_id, [])
 
-            title, content = _split_name_content(getattr(loc, "name", "") or "")
+            title, content = self._split_name_content(getattr(loc, "name", "") or "")
 
             path_list = path_map.get(loc_id, [])
             parent = path_list[-2] if len(path_list) >= 2 else ""
@@ -236,54 +236,53 @@ class HomeboxApiManager:
 
         return sorted(collected, key=str.casefold)
 
+    def _create_authenticated_client(self, base_url: str) -> ApiClient:
+        """Authenticate against the Homebox API and return a ready client."""
 
-def _create_authenticated_client(self, base_url: str) -> ApiClient:
-    """Authenticate against the Homebox API and return a ready client."""
+        api_base = f"{base_url}/api"
+        configuration = Configuration(host=api_base)
+        api_client = ApiClient(configuration)
+        auth_api = AuthenticationApi(api_client)
+        token_response = auth_api.v1_users_login_post(
+            username=self.username,
+            password=self.password,
+            stay_logged_in=True,
+        )
 
-    api_base = f"{base_url}/api"
-    configuration = Configuration(host=api_base)
-    api_client = ApiClient(configuration)
-    auth_api = AuthenticationApi(api_client)
-    token_response = auth_api.v1_users_login_post(
-        username=self.username,
-        password=self.password,
-        stay_logged_in=True,
-    )
+        token = token_response.token
+        if not token:
+            raise RuntimeError("Login succeeded but did not return a token.")
+        configuration.api_key["Bearer"] = token
+        return ApiClient(configuration)
 
-    token = token_response.token
-    if not token:
-        raise RuntimeError("Login succeeded but did not return a token.")
-    configuration.api_key["Bearer"] = token
-    return ApiClient(configuration)
+    @staticmethod
+    def _build_location_paths(tree: List[Dict]) -> Dict[str, List[str]]:
+        paths: Dict[str, List[str]] = {}
 
+        def walk(node: Dict, ancestors: List[str]) -> None:
+            if not isinstance(node, dict):
+                return
+            node_type = (node.get("type") or node.get("nodeType") or "").lower()
+            if node_type and node_type != "location":
+                return
+            name = (node.get("name") or "").strip() or "Unnamed"
+            current_path = ancestors + [name]
+            loc_id = node.get("id")
+            if loc_id:
+                paths[loc_id] = current_path
+            for child in node.get("children") or []:
+                walk(child, current_path)
 
-def _build_location_paths(tree: List[Dict]) -> Dict[str, List[str]]:
-    paths: Dict[str, List[str]] = {}
+        for root in tree or []:
+            walk(root, [])
+        return paths
 
-    def walk(node: Dict, ancestors: List[str]) -> None:
-        if not isinstance(node, dict):
-            return
-        node_type = (node.get("type") or node.get("nodeType") or "").lower()
-        if node_type and node_type != "location":
-            return
-        name = (node.get("name") or "").strip() or "Unnamed"
-        current_path = ancestors + [name]
-        loc_id = node.get("id")
-        if loc_id:
-            paths[loc_id] = current_path
-        for child in node.get("children") or []:
-            walk(child, current_path)
-
-    for root in tree or []:
-        walk(root, [])
-    return paths
-
-
-def _split_name_content(name: str) -> tuple[str, str]:
-    text = (name or "").strip()
-    if "|" not in text:
-        return "", text
-    display_id, _, remainder = text.partition("|")
-    display_id = display_id.strip()
-    cleaned_name = remainder.strip() or text.replace("|", " ").strip()
-    return display_id, cleaned_name
+    @staticmethod
+    def _split_name_content(name: str) -> tuple[str, str]:
+        text = (name or "").strip()
+        if "|" not in text:
+            return "", text
+        display_id, _, remainder = text.partition("|")
+        display_id = display_id.strip()
+        cleaned_name = remainder.strip() or text.replace("|", " ").strip()
+        return display_id, cleaned_name
