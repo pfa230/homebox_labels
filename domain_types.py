@@ -20,6 +20,7 @@ class Asset:
     id: str
     display_id: str
     name: str
+    location_id: str
     location: str
     parent_asset: str
     labels: List[str] = field(default_factory=list)

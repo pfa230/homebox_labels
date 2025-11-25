@@ -52,10 +52,11 @@ def collect_locations(
 def collect_assets(
     api_manager: HomeboxApiManager,
     name_pattern: Optional[str],
+    location_id: Optional[str] = None,
 ) -> List[Asset]:
     """Fetch assets as domain objects."""
 
-    items = api_manager.list_items()
+    items = api_manager.list_items(location_id=location_id)
 
     if name_pattern:
         try:

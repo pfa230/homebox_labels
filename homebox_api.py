@@ -134,7 +134,7 @@ class HomeboxApiManager:
             )
         return labels_map
 
-    def list_items(self, page_size: int = 100) -> List[Asset]:
+    def list_items(self, page_size: int = 100, location_id: str | None = None) -> List[Asset]:
         """Return assets as domain objects."""
 
         items: List[Asset] = []
@@ -143,6 +143,7 @@ class HomeboxApiManager:
             response = self._items_api.v1_items_get(
                 page=page,
                 page_size=page_size,
+                locations=[location_id] if location_id else None,
                 _request_timeout=self.timeout,
             )
             page_items = response.items or []
@@ -168,6 +169,7 @@ class HomeboxApiManager:
                     label_names.append(name)
             loc = getattr(item, "location", None)
             location_name = (getattr(loc, "name", "") or "").strip() if loc else ""
+            location_id = (getattr(loc, "id", "") or "").strip() if loc else ""
             parent_asset_name = (
                 (getattr(item, "parent_name", None) or getattr(item, "parent", None) or "")
                 or ""
@@ -177,6 +179,7 @@ class HomeboxApiManager:
                     id=item_id,
                     display_id=getattr(item, "asset_id", "") or "",
                     name=getattr(item, "name", "") or "",
+                    location_id=location_id,
                     location=location_name,
                     parent_asset=parent_asset_name.strip(),
                     labels=label_names,

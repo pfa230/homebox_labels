@@ -414,11 +414,17 @@ def run_web_app(
     @app.route("/assets", methods=["GET"])
     def assets_index() -> Response | str:
         try:
-            assets = collect_assets(api_manager, name_pattern=None)
+            location_filter = (request.args.get("location") or "").strip()
+            assets = collect_assets(
+                api_manager,
+                name_pattern=None,
+                location_id=location_filter or None,
+            )
         except Exception as exc:  # pragma: no cover - best effort message
             return Response(f"Failed to load assets: {exc}", status=500)
-
-        location_filter = (request.args.get("location") or "").strip()
+        if location_filter:
+            # normalize filter to stored link value for sort links
+            pass
 
         rows = [
             {
@@ -427,11 +433,12 @@ def run_web_app(
                 "display_name": asset.name or "Unnamed",
                 "parent_asset": asset.parent_asset,
                 "location": asset.location,
+                "location_id": asset.location_id,
                 "labels": _truncate(", ".join(asset.labels).strip(), 80),
                 "description": _truncate(asset.description, 160),
             }
             for asset in assets
-            if asset.id and (not location_filter or asset.location == location_filter)
+            if asset.id
         ]
 
         sort_field, sort_direction = _parse_sort_params(default_field="id")
