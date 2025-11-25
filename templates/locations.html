@@ -103,7 +103,9 @@
               </td>
               <td>
                 {% if loc.display_id %}
-                  <div class="meta">{{ loc.display_id }}</div>
+                  <div class="meta">
+                    <a href="{{ loc.assets_link }}">{{ loc.display_id }}</a>
+                  </div>
                 {% else %}
                   &mdash;
                 {% endif %}
