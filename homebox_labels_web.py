@@ -417,6 +417,8 @@ def run_web_app(
         except Exception as exc:  # pragma: no cover - best effort message
             return Response(f"Failed to load assets: {exc}", status=500)
 
+        location_filter = (request.args.get("location") or "").strip()
+
         rows = [
             {
                 "id": asset.id,
@@ -428,12 +430,17 @@ def run_web_app(
                 "description": _truncate(asset.description, 160),
             }
             for asset in assets
-            if asset.id
+            if asset.id and (not location_filter or asset.location == location_filter)
         ]
 
         sort_field, sort_direction = _parse_sort_params(default_field="id")
         _sort_rows(rows, sort_field, sort_direction)
-        sort_links = _build_sort_links("assets_index", sort_field, sort_direction)
+        sort_links = _build_sort_links(
+            "assets_index",
+            sort_field,
+            sort_direction,
+            location=location_filter or "",
+        )
 
         error_key = request.args.get("error")
         error_message = None

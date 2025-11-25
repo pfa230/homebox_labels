@@ -51,11 +51,11 @@ class HomeboxApiManager:
         ) or []
         if not locations_raw:
             return []
-        loc_ids = [
-            loc.id
-            for loc in locations_raw
-            if isinstance(getattr(loc, "id", None), str) and getattr(loc, "id")
-        ]
+        loc_ids: List[str] = []
+        for loc in locations_raw:
+            loc_id = getattr(loc, "id", "") or ""
+            if isinstance(loc_id, str) and loc_id:
+                loc_ids.append(loc_id)
         detail_map: Dict[str, Dict] = self.get_location_details(loc_ids)
         tree = self.get_location_tree()
         path_map = _build_location_paths(tree)
