@@ -38,24 +38,23 @@
             </label>
           {% endif %}
         </div>
-        {% if option_specs %}
-          <div style="margin-top: 0.75rem; display: flex; flex-wrap: wrap; gap: 1rem;">
-            {% for option in option_specs %}
-              <div class="option" style="margin-bottom: 0; display: flex; gap: 0.5rem; align-items: center;">
-                <span class="option-label" style="min-width: auto; font-weight: 600;">Set all {{ option.name }}</span>
-                <select id="bulk_{{ option.name }}">
-                  {% for value in option.possible_values %}
-                    <option value="{{ value }}">{{ value }}</option>
-                  {% endfor %}
-                </select>
-                <button type="button" class="secondary" onclick="applyOptionToAll('{{ option.name }}')">
-                  Apply to all
-                </button>
-              </div>
-            {% endfor %}
-          </div>
-        {% endif %}
       </div>
+      {% if option_specs %}
+      <div style="margin-top: 0.75rem;">
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.85rem 1rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
+          {% for option in option_specs %}
+            <div class="option" style="margin-bottom: 0; display: flex; gap: 0.5rem; align-items: center;">
+              <span class="option-label" style="min-width: auto; font-weight: 600;">Set all {{ option.name }}</span>
+              <select id="bulk_{{ option.name }}" onchange="applyOptionToAll('{{ option.name }}')">
+                {% for value in option.possible_values %}
+                  <option value="{{ value }}">{{ value }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
       <table>
         <thead>
           <tr>

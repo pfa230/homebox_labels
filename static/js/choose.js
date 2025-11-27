@@ -12,8 +12,9 @@ function applyOptionToAll(optionName) {
   const bulkSelect = document.getElementById(`bulk_${optionName}`);
   if (!bulkSelect) return;
   const value = bulkSelect.value;
-  const selects = document.querySelectorAll(`select[name^="option_${optionName}_"]`);
-  selects.forEach((sel) => {
-    sel.value = value;
-  });
+  document
+    .querySelectorAll(`select[name^="option_${optionName}_"]`)
+    .forEach((sel) => {
+      sel.value = value;
+    });
 }
