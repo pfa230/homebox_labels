@@ -65,6 +65,16 @@ def _render_pdf(
     canvas_obj = canvas.Canvas(output_path, pagesize=template.page_size)
 
     first_page = True
+
+    # Advance geometry for skipped labels
+    for _ in range(skip):
+        geometry = template.next_label_geometry()
+        if geometry.on_new_page:
+            if first_page:
+                first_page = False
+            else:
+                canvas_obj.showPage()
+
     for label in labels:
         geometry = template.next_label_geometry()
         if geometry.on_new_page:
