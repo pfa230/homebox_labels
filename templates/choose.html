@@ -11,18 +11,18 @@
   </head>
   <body>
     <h1>Select Template & Options - {{ 'Assets' if page_type == 'assets' else 'Locations' }}</h1>
-    <div style="margin-bottom: 1rem;">
+    <div class="mb-1">
       {% if page_type == 'locations' %}
-        <a href="{{ url_for('assets_index') }}" style="color: #2563eb; text-decoration: none;">Switch to Assets →</a>
+        <a href="{{ url_for('assets_index') }}" class="link-primary">Switch to Assets →</a>
       {% else %}
-        <a href="{{ url_for('locations_index') }}" style="color: #2563eb; text-decoration: none;">Switch to Locations →</a>
+        <a href="{{ url_for('locations_index') }}" class="link-primary">Switch to Locations →</a>
       {% endif %}
     </div>
     <form method="post" id="options-form" action="{{ url_for('assets_generate' if page_type == 'assets' else 'locations_generate') }}" data-page-type="{{ page_type }}">
       <div class="options">
-        <div style="display: flex; gap: 2rem; align-items: center;">
-          <label class="option" style="margin-bottom: 0">
-            <span class="option-label" style="min-width: auto; font-weight: 600;">Template</span>
+        <div class="row">
+          <label class="option">
+            <span class="option-label strong">Template</span>
             <select name="template_name" onchange="onTemplateChange()">
               {% for template in template_choices %}
                 <option value="{{ template }}" {% if template == selected_template %}selected{% endif %}>
@@ -32,19 +32,19 @@
             </select>
           </label>
           {% if has_page_size %}
-            <label class="option" style="margin-bottom: 0">
-              <span class="option-label" style="min-width: auto; font-weight: 600;">Skip labels</span>
-              <input type="number" name="skip" value="{{ skip_labels }}" min="0" style="width: 5rem; padding: 0.4rem 0.6rem; border: 1px solid #d1d5db; border-radius: 4px;" />
+            <label class="option">
+              <span class="option-label strong">Skip labels</span>
+              <input type="number" name="skip" value="{{ skip_labels }}" min="0" class="input-number" />
             </label>
           {% endif %}
         </div>
       </div>
       {% if option_specs %}
-      <div style="margin-top: 0.75rem;">
-        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.85rem 1rem; display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;">
+      <div class="mt-075">
+        <div class="panel-light">
           {% for option in option_specs %}
-            <div class="option" style="margin-bottom: 0; display: flex; gap: 0.5rem; align-items: center;">
-              <span class="option-label" style="min-width: auto; font-weight: 600;">Set all {{ option.name }}</span>
+            <div class="option-inline">
+              <span class="option-label strong">Set all {{ option.name }}</span>
               <select id="bulk_{{ option.name }}" onchange="applyOptionToAll('{{ option.name }}')">
                 {% for value in option.possible_values %}
                   <option value="{{ value }}">{{ value }}</option>
@@ -59,10 +59,10 @@
         <thead>
           <tr>
             <th>Name</th>
-            <th style="width: 25%">Labels</th>
-            <th style="width: 35%">Description</th>
+            <th class="th-labels-wide">Labels</th>
+            <th class="th-desc-wide">Description</th>
             {% if option_specs %}
-              <th style="width: 20%">Options</th>
+              <th class="th-options">Options</th>
             {% endif %}
           </tr>
         </thead>
@@ -111,7 +111,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <div class="controls" style="margin-top: 1.5rem">
+      <div class="controls mt-15">
         <button type="submit" class="primary">
           Render Labels
         </button>

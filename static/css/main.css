@@ -7,6 +7,46 @@ body {
 h1 {
   margin-bottom: 1.5rem;
 }
+.mb-1 {
+  margin-bottom: 1rem;
+}
+.mb-075 {
+  margin-bottom: 0.75rem;
+}
+.mt-075 {
+  margin-top: 0.75rem;
+}
+.link-primary {
+  color: #2563eb;
+  text-decoration: none;
+}
+.th-pick {
+  width: 3rem;
+}
+.th-id {
+  width: 12%;
+}
+.th-parent {
+  width: 18%;
+}
+.th-labels {
+  width: 22%;
+}
+.th-desc {
+  width: 30%;
+}
+.th-labels-wide {
+  width: 25%;
+}
+.th-desc-wide {
+  width: 35%;
+}
+.th-options {
+  width: 20%;
+}
+.mt-15 {
+  margin-top: 1.5rem;
+}
 .controls {
   display: flex;
   gap: 0.5rem;
@@ -101,6 +141,27 @@ button.secondary {
   background: #fff;
   margin-bottom: 1.5rem;
 }
+.options .row {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+}
+.panel-light {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+.option-inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0;
+}
 .options legend {
   font-weight: 600;
   padding: 0 0.5rem;
@@ -119,11 +180,23 @@ button.secondary {
   font-size: 0.95rem;
   color: #111827;
 }
+.option-label.strong {
+  font-weight: 600;
+  min-width: auto;
+}
 .option select {
   padding: 0.4rem 0.6rem;
   border: 1px solid #d1d5db;
   border-radius: 4px;
   background: #fff;
+}
+input[type="number"] {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+}
+input.input-number {
+  width: 5rem;
 }
 @media (max-width: 800px) {
   table,

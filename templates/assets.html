@@ -24,8 +24,8 @@
   </head>
   <body>
     <h1>Homebox Label Generator - Assets</h1>
-    <div style="margin-bottom: 1rem;">
-      <a href="{{ url_for('locations_index') }}" style="color: #2563eb; text-decoration: none;">Locations →</a>
+    <div class="mb-1">
+      <a href="{{ url_for('locations_index') }}" class="link-primary">Locations →</a>
     </div>
     {% if error %}
       <div class="error">{{ error }}</div>
@@ -46,9 +46,9 @@
       <table>
         <thead>
           <tr>
-            <th style="width: 3rem">Pick</th>
+            <th class="th-pick">Pick</th>
             {% set id_sort = 'ascending' if sort_field == 'id' and sort_direction == 'asc' else 'descending' if sort_field == 'id' else 'none' %}
-            <th style="width: 12%" aria-sort="{{ id_sort }}">
+            <th class="th-id" aria-sort="{{ id_sort }}">
               <a class="sortable{% if sort_field == 'id' %} active{% endif %}" href="{{ sort_links['id'] }}">
                 <span>ID</span>
                 {% if sort_field == 'id' %}
@@ -72,7 +72,7 @@
               </a>
             </th>
             {% set location_sort = 'ascending' if sort_field == 'location' and sort_direction == 'asc' else 'descending' if sort_field == 'location' else 'none' %}
-            <th style="width: 18%" aria-sort="{{ location_sort }}">
+            <th class="th-parent" aria-sort="{{ location_sort }}">
               <a class="sortable{% if sort_field == 'location' %} active{% endif %}" href="{{ sort_links['location'] }}">
                 <span>Location</span>
                 {% if sort_field == 'location' %}
@@ -83,9 +83,9 @@
                 {% endif %}
               </a>
             </th>
-            <th style="width: 18%">Parent Asset</th>
-            <th style="width: 22%">Labels</th>
-            <th style="width: 30%">Description</th>
+            <th class="th-parent">Parent Asset</th>
+            <th class="th-labels">Labels</th>
+            <th class="th-desc">Description</th>
           </tr>
         </thead>
         <tbody>
