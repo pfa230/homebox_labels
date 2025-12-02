@@ -28,6 +28,8 @@ from domain_data import collect_locations, collect_assets
 from label_templates.label_data import (
     locations_to_label_contents,
     assets_to_label_contents,
+    build_ui_url,
+    build_asset_ui_url,
 )
 from label_templates.label_generation import render
 from label_templates import get_template, list_templates
@@ -175,9 +177,10 @@ def run_web_app(
                     "display_name": display_name,
                     "parent": (loc.parent or "").strip(),
                     "asset_count": loc.asset_count,
+                    "assets_link": url_for("assets_index", location=loc.id),
+                    "homebox_location_link": build_ui_url(api_manager.base_url, loc.id),
                     "labels": ", ".join(loc.labels).strip(),
                     "description": _truncate(loc.description, 160),
-                    "assets_link": url_for("assets_index", location=loc.id),
                 }
             )
 
@@ -447,6 +450,7 @@ def run_web_app(
                 "parent_asset": asset.parent_asset,
                 "location": asset.location,
                 "location_id": asset.location_id,
+                "homebox_asset_link": build_asset_ui_url(api_manager.base_url, asset.id),
                 "labels": _truncate(", ".join(asset.labels).strip(), 80),
                 "description": _truncate(asset.description, 160),
             }

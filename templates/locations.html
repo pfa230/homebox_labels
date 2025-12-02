@@ -105,7 +105,9 @@
               <td>
                 {% if loc.display_id %}
                   <div class="meta">
-                    <a href="{{ loc.assets_link }}">{{ loc.display_id }}</a>
+                    <a href="{{ loc.homebox_location_link }}" target="_blank" rel="noopener noreferrer">
+                      {{ loc.display_id }}
+                    </a>
                   </div>
                 {% else %}
                   &mdash;
@@ -122,7 +124,11 @@
                 {% endif %}
               </td>
               <td>
-                {{ loc.asset_count }}
+                {% if loc.asset_count is not none %}
+                  <a href="{{ loc.assets_link }}">{{ loc.asset_count }}</a>
+                {% else %}
+                  &mdash;
+                {% endif %}
               </td>
               <td>
                 {% if loc.labels %}

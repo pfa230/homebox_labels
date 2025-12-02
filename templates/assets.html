@@ -96,7 +96,11 @@
               </td>
               <td>
                 {% if item.display_id %}
-                  <div class="meta">{{ item.display_id }}</div>
+                  <div class="meta">
+                    <a href="{{ item.homebox_asset_link }}" target="_blank" rel="noopener noreferrer">
+                      {{ item.display_id }}
+                    </a>
+                  </div>
                 {% else %}
                   &mdash;
                 {% endif %}
