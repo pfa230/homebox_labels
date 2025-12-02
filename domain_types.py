@@ -10,6 +10,7 @@ class Location:
     display_id: str
     name: str
     parent: str
+    asset_count: int = 0
     labels: List[str] = field(default_factory=list)
     description: str = ""
     path: List[str] = field(default_factory=list)

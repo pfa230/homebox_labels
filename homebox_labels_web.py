@@ -174,6 +174,7 @@ def run_web_app(
                     "display_id": (loc.display_id or "").strip(),
                     "display_name": display_name,
                     "parent": (loc.parent or "").strip(),
+                    "asset_count": loc.asset_count,
                     "labels": ", ".join(loc.labels).strip(),
                     "description": _truncate(loc.description, 160),
                     "assets_link": url_for("assets_index", location=loc.id),

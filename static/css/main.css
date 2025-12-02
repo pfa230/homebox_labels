@@ -26,6 +26,7 @@ h1 {
 .th-pick { width: 3rem; }
 .th-id { width: 12%; }
 .th-parent { width: 18%; }
+.th-count { width: 10%; }
 .th-labels { width: 22%; }
 .th-desc { width: 30%; }
 .th-labels-wide { width: 25%; }

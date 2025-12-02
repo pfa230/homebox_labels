@@ -91,6 +91,7 @@
                 {% endif %}
               </a>
             </th>
+            <th class="th-count"># Assets</th>
             <th class="th-labels">Labels</th>
             <th class="th-desc">Description</th>
           </tr>
@@ -119,6 +120,9 @@
                 {% else %}
                   &mdash;
                 {% endif %}
+              </td>
+              <td>
+                {{ loc.asset_count }}
               </td>
               <td>
                 {% if loc.labels %}

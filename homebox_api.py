@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Set
+from dataclasses import dataclass
 
 from domain_types import Location, Asset
 
@@ -59,7 +60,7 @@ class HomeboxApiManager:
         detail_map: Dict[str, Dict] = self.get_location_details(loc_ids)
         tree = self.get_location_tree()
         path_map = self._build_location_paths(tree)
-        labels_map = self.get_location_item_labels(loc_ids)
+        labels_map, asset_count_map = self.get_location_item_labels(loc_ids)
 
         domain: List[Location] = []
         for loc in locations_raw:
@@ -71,6 +72,7 @@ class HomeboxApiManager:
                 or ""
             ).strip()
             label_names = labels_map.get(loc_id, [])
+            asset_count = asset_count_map.get(loc_id, 0)
 
             title, content = self._split_name_content(getattr(loc, "name", "") or "")
 
@@ -83,6 +85,7 @@ class HomeboxApiManager:
                     display_id=title,
                     name=content,
                     parent=parent,
+                    asset_count=asset_count,
                     labels=label_names,
                     description=description,
                     path=path_map.get(loc_id, []),
@@ -121,18 +124,21 @@ class HomeboxApiManager:
         self,
         loc_ids: Iterable[str],
         page_size: int = 100,
-    ) -> Dict[str, List[str]]:
-        """Collect sorted label names for every location in loc_ids."""
+    ) -> tuple[Dict[str, List[str]], Dict[str, int]]:
+        """Collect label lists and unique asset counts keyed by location id."""
 
         labels_map: Dict[str, List[str]] = {}
+        counts_map: Dict[str, int] = {}
         for loc_id in loc_ids:
             if not loc_id:
                 continue
-            labels_map[loc_id] = self._fetch_labels_for_location(
+            labels, count = self._fetch_labels_and_count_for_location(
                 loc_id,
                 page_size=page_size,
             )
-        return labels_map
+            labels_map[loc_id] = labels
+            counts_map[loc_id] = count
+        return labels_map, counts_map
 
     def list_items(self, page_size: int = 100, location_id: str | None = None) -> List[Asset]:
         """Return assets as domain objects."""
@@ -207,14 +213,15 @@ class HomeboxApiManager:
             details[item_id] = self.get_item_detail(item_id)
         return details
 
-    def _fetch_labels_for_location(
+    def _fetch_labels_and_count_for_location(
         self,
         loc_id: str,
         page_size: int = 100,
-    ) -> List[str]:
-        """Return sorted unique label names for all items in a location."""
+    ) -> tuple[List[str], int]:
+        """Return (sorted unique label names, unique asset count) for a location."""
 
         collected: Set[str] = set()
+        asset_ids: Set[str] = set()
         page = 1
         while True:
             response = self._items_api.v1_items_get(
@@ -225,6 +232,9 @@ class HomeboxApiManager:
             )
             items = response.items or []
             for item in items:
+                item_id = (getattr(item, "id", "") or "").strip()
+                if item_id:
+                    asset_ids.add(item_id)
                 for label in getattr(item, "labels", None) or []:
                     name = (label.name or "").strip()
                     if name:
@@ -237,7 +247,7 @@ class HomeboxApiManager:
                 break
             page += 1
 
-        return sorted(collected, key=str.casefold)
+        return sorted(collected, key=str.casefold), len(asset_ids)
 
     def _create_authenticated_client(self, base_url: str) -> ApiClient:
         """Authenticate against the Homebox API and return a ready client."""
