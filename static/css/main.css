@@ -79,9 +79,8 @@ button.secondary { background: #e5e7eb; color: #111827; }
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin: 0;
 }
-.option:last-child { margin-bottom: 0; }
 .option-inline {
   display: flex;
   gap: 0.5rem;
@@ -100,7 +99,7 @@ button.secondary { background: #e5e7eb; color: #111827; }
 
 /* Inputs */
 .option select,
-input[type="number"] {
+.option input[type="number"] {
   padding: 0.4rem 0.6rem;
   border: 1px solid #d1d5db;
   border-radius: 4px;

@@ -238,6 +238,7 @@ def run_web_app(
             )
 
         skip_labels = int(request.form.get("skip", "0") or "0")
+        copies = int(request.form.get("copies", "1") or "1")
 
         try:
             locs = collect_locations(api_manager, name_pattern=None)
@@ -249,19 +250,21 @@ def run_web_app(
 
         rows = []
         for label in label_contents:
-            display_name = (
-                " ".join(filter(None, [label.display_id, label.name])).strip() or "Unnamed"
-            )
-            rows.append(
-                {
-                    "id": label.id,
-                    "display_name": display_name,
-                    "path": "",
-                    "labels": _truncate(", ".join(label.labels).strip(), 80),
-                    "description": _truncate(label.description, 160),
-                    "selected_options": label.template_options or {},
-                }
-            )
+            for copy_idx in range(copies):
+                copy_id = f"{label.id}__copy{copy_idx}" if copies > 1 else label.id
+                display_name = (
+                    " ".join(filter(None, [label.display_id, label.name])).strip() or "Unnamed"
+                )
+                rows.append(
+                    {
+                        "id": copy_id,
+                        "display_name": display_name,
+                        "path": "",
+                        "labels": _truncate(", ".join(label.labels).strip(), 80),
+                        "description": _truncate(label.description, 160),
+                        "selected_options": label.template_options or {},
+                    }
+                )
 
         return render_template(
             "choose.html",
@@ -271,6 +274,7 @@ def run_web_app(
             option_specs=option_specs,
             has_page_size=has_page_size,
             skip_labels=skip_labels,
+            copies=copies,
             page_type="locations",
         )
 
@@ -302,9 +306,17 @@ def run_web_app(
 
         try:
             locs = collect_locations(api_manager, name_pattern=None)
-            loc_by_id = {loc.id: loc for loc in locs}
-            ordered = [loc_by_id[loc_id] for loc_id in selected_ids if loc_id in loc_by_id]
-            labels = locations_to_label_contents(ordered, base_ui)
+            loc_map = {loc.id: loc for loc in locs}
+            labels = []
+            for loc_id in selected_ids:
+                base_id = loc_id.split("__copy", 1)[0]
+                loc = loc_map.get(base_id)
+                if not loc:
+                    continue
+                lc = locations_to_label_contents([loc], base_ui)[0]
+                if loc_id != loc.id:
+                    lc = replace(lc, id=loc_id)
+                labels.append(lc)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("locations_index", error="generation", message=str(exc)))
         if not labels:
@@ -498,6 +510,7 @@ def run_web_app(
             )
 
         skip_labels = int(request.form.get("skip", "0") or "0")
+        copies = int(request.form.get("copies", "1") or "1")
 
         try:
             assets = collect_assets(api_manager, name_pattern=None)
@@ -508,19 +521,21 @@ def run_web_app(
 
         rows = []
         for label in label_contents:
-            display_name = (
-                " ".join(filter(None, [label.display_id, label.name])).strip() or "Unnamed"
-            )
-            rows.append(
-                {
-                    "id": label.id,
-                    "display_name": display_name,
-                    "path": (label.parent or "").strip(),
-                    "labels": _truncate(", ".join(label.labels).strip(), 80),
-                    "description": _truncate(label.description, 160),
-                    "selected_options": label.template_options or {},
-                }
-            )
+            for copy_idx in range(copies):
+                copy_id = f"{label.id}__copy{copy_idx}" if copies > 1 else label.id
+                display_name = (
+                    " ".join(filter(None, [label.display_id, label.name])).strip() or "Unnamed"
+                )
+                rows.append(
+                    {
+                        "id": copy_id,
+                        "display_name": display_name,
+                        "path": (label.parent or "").strip(),
+                        "labels": _truncate(", ".join(label.labels).strip(), 80),
+                        "description": _truncate(label.description, 160),
+                        "selected_options": label.template_options or {},
+                    }
+                )
 
         return render_template(
             "choose.html",
@@ -530,6 +545,7 @@ def run_web_app(
             option_specs=option_specs,
             has_page_size=has_page_size,
             skip_labels=skip_labels,
+            copies=copies,
             page_type="assets",
         )
 
@@ -561,8 +577,17 @@ def run_web_app(
 
         try:
             assets = collect_assets(api_manager, name_pattern=None)
-            assets = [a for a in assets if a.id in selected_ids]
-            labels = assets_to_label_contents(assets, api_manager.base_url)
+            asset_map = {a.id: a for a in assets}
+            labels = []
+            for asset_id in selected_ids:
+                base_id = asset_id.split("__copy", 1)[0]
+                asset = asset_map.get(base_id)
+                if not asset:
+                    continue
+                lc = assets_to_label_contents([asset], api_manager.base_url)[0]
+                if asset_id != asset.id:
+                    lc = replace(lc, id=asset_id)
+                labels.append(lc)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("assets_index", error="generation", message=str(exc)))
         if not labels:

@@ -31,6 +31,14 @@
               {% endfor %}
             </select>
           </label>
+          <label class="option">
+            <span class="option-label strong">Number</span>
+            <select name="copies" onchange="onCopiesChange()">
+              {% for n in [1,2,3,4,5] %}
+                <option value="{{ n }}" {% if copies == n %}selected{% endif %}>{{ n }}</option>
+              {% endfor %}
+            </select>
+          </label>
           {% if has_page_size %}
             <label class="option">
               <span class="option-label strong">Skip labels</span>
