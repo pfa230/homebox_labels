@@ -28,7 +28,7 @@ class Orientation(StrEnum):
     VERTICAL = "vertical"
 
 
-class Toggle(StrEnum):
+class Outline(StrEnum):
     OFF = "off"
     ON = "on"
 
@@ -37,7 +37,7 @@ class Template(LabelTemplate):
     """Unified Avery 5163 template supporting per-label options."""
 
     _DEFAULT_ORIENTATION = Orientation.HORIZONTAL
-    _DEFAULT_OUTLINE = Toggle.OFF
+    _DEFAULT_OUTLINE = Outline.OFF
     _slot_index: int
 
     def __init__(self) -> None:
@@ -52,7 +52,7 @@ class Template(LabelTemplate):
             ),
             TemplateOption(
                 name="outline",
-                possible_values=[t.value for t in Toggle],
+                possible_values=[t.value for t in Outline],
             ),
         ]
 
@@ -101,6 +101,6 @@ class Template(LabelTemplate):
     def _outline_for_label(self, content: LabelContent) -> bool:
         options = content.template_options or {}
         value = (options.get("outline") or self._DEFAULT_OUTLINE.value).lower()
-        if value in Toggle._value2member_map_:
-            return Toggle(value) is Toggle.ON
-        return self._DEFAULT_OUTLINE is Toggle.ON
+        if value in Outline._value2member_map_:
+            return Outline(value) is Outline.ON
+        return self._DEFAULT_OUTLINE is Outline.ON
