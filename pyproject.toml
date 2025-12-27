@@ -19,6 +19,5 @@ exclude = [
   "**/__pycache__",
   "**/.ruff_cache",
 ]
-
-[tool.pyright.diagnosticSeverityOverrides]
-reportAttributeAccessIssue = "none"
+venvPath = "."
+venv = ".venv"

@@ -1,3 +1,6 @@
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportAttributeAccessIssue=false, reportMissingImports=false
+# pyright: reportMissingTypeStubs=false
+
 """Variable font management utilities for the Homebox label generator."""
 
 from __future__ import annotations
@@ -6,7 +9,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Tuple, Union
 
 from fontTools.ttLib import TTFont as VariableTTFont
 from fontTools.varLib import instancer
@@ -222,7 +225,6 @@ def build_font_config(
     title_spec: FontSpec,
     content_spec: FontSpec,
     label_spec: FontSpec,
-    url: Optional[str] = None,
 ) -> FontConfig:
     """Download/register fonts and return ready-to-use settings."""
 
