@@ -1,4 +1,6 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportAttributeAccessIssue=false, reportMissingImports=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false
+# pyright: reportUnknownArgumentType=false, reportAttributeAccessIssue=false
+# pyright: reportMissingImports=false
 # pyright: reportMissingTypeStubs=false
 
 """Variable font management utilities for the Homebox label generator."""
