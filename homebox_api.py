@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Set
-from dataclasses import dataclass
 
 from domain_types import Location, Asset
 
@@ -34,6 +35,7 @@ class HomeboxApiManager:
             raise RuntimeError("Homebox username and password are required.")
 
         self.base_url = base_clean
+        self._location_id_regex: re.Pattern[str] = self._compile_location_id_regex()
         self._api_client = self._create_authenticated_client(base_clean)
         self._locations_api = LocationsApi(self._api_client)
         self._items_api = ItemsApi(self._api_client)
@@ -164,7 +166,7 @@ class HomeboxApiManager:
 
         return items
 
-    def _convert_items(self, items_raw) -> List[Asset]:
+    def _convert_items(self, items_raw: Iterable[object] | None) -> List[Asset]:
         assets: List[Asset] = []
         for item in items_raw or []:
             item_id = getattr(item, "id", "") or ""
@@ -290,12 +292,26 @@ class HomeboxApiManager:
             walk(root, [])
         return paths
 
-    @staticmethod
-    def _split_name_content(name: str) -> tuple[str, str]:
+    def _compile_location_id_regex(self) -> re.Pattern[str] | None:
+        pattern = os.getenv(
+            "HOMEBOX_LOCATION_ID_REGEX",
+            r"^\s*([^|]+?)\s*\|",
+        ).strip()
+        try:
+            return re.compile(pattern)
+        except re.error as exc:
+            raise RuntimeError(
+                f"Invalid HOMEBOX_LOCATION_ID_REGEX '{pattern}': {exc}"
+            ) from exc
+
+    def _split_name_content(self, name: str) -> tuple[str, str]:
         text = (name or "").strip()
-        if "|" not in text:
-            return "", text
-        display_id, _, remainder = text.partition("|")
-        display_id = display_id.strip()
-        cleaned_name = remainder.strip() or text.replace("|", " ").strip()
-        return display_id, cleaned_name
+        if not text:
+            return "", ""
+
+        match = self._location_id_regex.search(text)
+        if match:
+            display_id = (match.group(1) or "").strip()
+            cleaned_name = text[match.end():].strip()
+            return display_id, cleaned_name or text
+        return "", text
