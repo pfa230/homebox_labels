@@ -44,7 +44,7 @@ class Template(LabelTemplate):
         self._slot_index = 0
         super().__init__()
 
-    def available_options(self) -> list[TemplateOption]:  # type: ignore[override]
+    def available_options(self) -> list[TemplateOption]:
         return [
             TemplateOption(
                 name="orientation",
@@ -57,10 +57,10 @@ class Template(LabelTemplate):
         ]
 
     @property
-    def page_size(self):  # type: ignore[override]
+    def page_size(self) -> tuple[float, float]:
         return PAGE_SIZE
 
-    def reset(self) -> None:  # type: ignore[override]
+    def reset(self) -> None:
         self._slot_index = 0
 
     def next_label_geometry(self) -> LabelGeometry:
@@ -84,7 +84,7 @@ class Template(LabelTemplate):
 
         return LabelGeometry(left, bottom, right, top, on_new_page)
 
-    def render_label(self, content: LabelContent) -> bytes:  # type: ignore[override]
+    def render_label(self, content: LabelContent) -> bytes:
         orientation = self._orientation_for_label(content)
         outline = self._outline_for_label(content)
         if orientation is Orientation.VERTICAL:

@@ -380,7 +380,7 @@ def run_web_app(
             download_name = "homebox_labels.pdf"
 
             @after_this_request
-            def cleanup_pdf(response):
+            def cleanup_pdf(response: Response) -> Response:
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -421,7 +421,7 @@ def run_web_app(
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            def cleanup_zip(response):
+            def cleanup_zip(response: Response) -> Response:
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
@@ -650,7 +650,7 @@ def run_web_app(
                 return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
             @after_this_request
-            def cleanup_pdf(response):
+            def cleanup_pdf(response: Response) -> Response:
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -690,7 +690,7 @@ def run_web_app(
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            def cleanup_zip(response):
+            def cleanup_zip(response: Response) -> Response:
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
@@ -718,7 +718,7 @@ def run_web_app(
     app.run(host=host, port=port, debug=False, use_reloader=use_reloader)
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point for the web UI."""
     parser = argparse.ArgumentParser(
         description="Homebox label generator web UI"

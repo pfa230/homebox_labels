@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Iterable
+from types import ModuleType
 from importlib import import_module
 
 from .base import LabelTemplate
@@ -10,7 +11,7 @@ from .base import LabelTemplate
 _TEMPLATE_NAMES = {"avery5163", "ptouch"}
 
 
-def _load_template_module(name: str):
+def _load_template_module(name: str) -> ModuleType:
     """Load template module, handling package/module name conflicts."""
     key = name.lower()
     return import_module(f"{__name__}.{key}")
