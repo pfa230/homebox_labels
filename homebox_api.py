@@ -310,7 +310,7 @@ class HomeboxApiManager:
             return "", ""
 
         match = self._location_id_regex.search(text)
-        if match and match.group(1) and match.group(2):
+        if match and match.group(1) and match.group(2) is not None:
             display_id = match.group(1).strip()
             if not display_id:
                 return "", text
