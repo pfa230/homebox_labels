@@ -8,7 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import zipfile
-from typing import Any, List
+from typing import Any
 
 from dotenv import load_dotenv
 from flask import (
@@ -32,6 +32,7 @@ from label_templates.label_data import (
     build_asset_ui_url,
 )
 from label_templates.label_generation import render
+from label_templates.label_types import LabelContent
 from label_templates import get_template, list_templates
 
 
@@ -71,12 +72,12 @@ def run_web_app(
 
         return sort_field, sort_direction
 
-    def _sort_rows(rows: list[dict[str, str]], sort_field: str, sort_direction: str) -> None:
-        def _key(row: dict[str, str]) -> tuple[str, str, str, str]:
-            base_id = (row.get("display_id") or row.get("id") or "").lower()
-            name = (row.get("display_name") or "").lower()
-            parent = (row.get("parent") or "").lower()
-            location = (row.get("location") or "").lower()
+    def _sort_rows(rows: list[dict[str, str | int]], sort_field: str, sort_direction: str) -> None:
+        def _key(row: dict[str, str | int]) -> tuple[str, str, str, str]:
+            base_id = str(row.get("display_id") or row.get("id") or "").lower()
+            name = str(row.get("display_name") or "").lower()
+            parent = str(row.get("parent") or "").lower()
+            location = str(row.get("location") or "").lower()
 
             if sort_field == "id":
                 return (base_id, name, parent, location)
@@ -113,19 +114,13 @@ def run_web_app(
             return text
         return text[: limit - 1].rstrip() + "…"
 
-    def _friendly_path(path_text: str) -> str:
-        path_text = (path_text or "").strip()
-        if not path_text:
-            return ""
-        return path_text.replace("->", " / ")
-
-    def _parse_selected_ids(form: ImmutableMultiDict) -> List[str]:
+    def _parse_selected_ids(form: ImmutableMultiDict[str, str]) -> list[str]:
         ids = form.getlist("location_id")
         return [loc_id for loc_id in ids if loc_id]
 
-    def _dedupe_base_ids(selected_ids: List[str]) -> List[str]:
+    def _dedupe_base_ids(selected_ids: list[str]) -> list[str]:
         """Collapse copy IDs back to base IDs while preserving order."""
-        base_ids: List[str] = []
+        base_ids: list[str] = []
         seen: set[str] = set()
         for loc_id in selected_ids:
             base_id = loc_id.split("__copy", 1)[0]
@@ -136,9 +131,9 @@ def run_web_app(
         return base_ids
 
     def _parse_template_options(
-        form: ImmutableMultiDict,
-        location_ids: List[str],
-        option_names: List[str],
+        form: ImmutableMultiDict[str, str],
+        location_ids: list[str],
+        option_names: list[str],
     ) -> dict[str, dict[str, str]]:
         """Parse template options from form data.
 
@@ -159,11 +154,11 @@ def run_web_app(
         return options_by_location
 
     @app.route("/", methods=["GET"])
-    def index() -> Response | str:
+    def index() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         return redirect(url_for("locations_index"))
 
     @app.route("/locations", methods=["GET"])
-    def locations_index() -> Response | str:
+    def locations_index() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         try:
             locations = collect_locations(api_manager, name_pattern=None)
         except Exception as exc:  # pragma: no cover - best effort message
@@ -175,7 +170,7 @@ def run_web_app(
             in {"1", "true", "yes", "on"}
         )
 
-        rows = []
+        rows: list[dict[str, str | int]] = []
         for loc in locations:
             if not loc.id:
                 continue
@@ -227,7 +222,7 @@ def run_web_app(
         )
 
     @app.route("/locations/choose", methods=["POST"])
-    def locations_choose() -> Response | str:
+    def locations_choose() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("locations_index", error="no-selection"))
@@ -265,7 +260,7 @@ def run_web_app(
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("locations_index", error="generation", message=str(exc)))
 
-        rows = []
+        rows: list[dict[str, str | dict[str, str]]] = []
         for label in label_contents:
             for copy_idx in range(copies):
                 copy_id = f"{label.id}__copy{copy_idx}" if copies > 1 else label.id
@@ -296,7 +291,7 @@ def run_web_app(
         )
 
     @app.route("/locations/generate", methods=["POST"])
-    def locations_generate() -> Response | str:
+    def locations_generate() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("locations_index", error="no-selection"))
@@ -324,7 +319,7 @@ def run_web_app(
         try:
             locs = collect_locations(api_manager, name_pattern=None)
             loc_map = {loc.id: loc for loc in locs}
-            labels = []
+            labels: list[LabelContent] = []
             for loc_id in selected_ids:
                 base_id = loc_id.split("__copy", 1)[0]
                 loc = loc_map.get(base_id)
@@ -353,7 +348,7 @@ def run_web_app(
         )
 
         # Update labels with their template options
-        updated_labels = []
+        updated_labels: list[LabelContent] = []
         for label in labels:
             location_options = options_by_location.get(label.id, {})
             if location_options:
@@ -380,7 +375,7 @@ def run_web_app(
             download_name = "homebox_labels.pdf"
 
             @after_this_request
-            def cleanup_pdf(response: Response) -> Response:
+            def cleanup_pdf(response: Response):  # pyright: ignore[reportUnusedFunction]
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -421,7 +416,7 @@ def run_web_app(
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            def cleanup_zip(response: Response) -> Response:
+            def cleanup_zip(response: Response):  # pyright: ignore[reportUnusedFunction]
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
@@ -441,7 +436,7 @@ def run_web_app(
 
     # Asset routes
     @app.route("/assets", methods=["GET"])
-    def assets_index() -> Response | str:
+    def assets_index() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         try:
             location_filter = (request.args.get("location") or "").strip()
             assets = collect_assets(
@@ -455,7 +450,7 @@ def run_web_app(
             # normalize filter to stored link value for sort links
             pass
 
-        rows = [
+        rows: list[dict[str, str | int]] = [
             {
                 "id": asset.id,
                 "display_id": asset.display_id,
@@ -501,7 +496,7 @@ def run_web_app(
         )
 
     @app.route("/assets/choose", methods=["POST"])
-    def assets_choose() -> Response | str:
+    def assets_choose() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("assets_index", error="no-selection"))
@@ -538,7 +533,7 @@ def run_web_app(
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
-        rows = []
+        rows: list[dict[str, str | dict[str, str]]] = []
         for label in label_contents:
             for copy_idx in range(copies):
                 copy_id = f"{label.id}__copy{copy_idx}" if copies > 1 else label.id
@@ -569,7 +564,7 @@ def run_web_app(
         )
 
     @app.route("/assets/generate", methods=["POST"])
-    def assets_generate() -> Response | str:
+    def assets_generate() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("assets_index", error="no-selection"))
@@ -597,7 +592,7 @@ def run_web_app(
         try:
             assets = collect_assets(api_manager, name_pattern=None)
             asset_map = {a.id: a for a in assets}
-            labels = []
+            labels: list[LabelContent] = []
             for asset_id in selected_ids:
                 base_id = asset_id.split("__copy", 1)[0]
                 asset = asset_map.get(base_id)
@@ -626,7 +621,7 @@ def run_web_app(
         )
 
         # Update labels with their template options
-        updated_labels = []
+        updated_labels: list[LabelContent] = []
         for label in labels:
             location_options = options_by_location.get(label.id, {})
             if location_options:
@@ -650,7 +645,7 @@ def run_web_app(
                 return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
             @after_this_request
-            def cleanup_pdf(response: Response) -> Response:
+            def cleanup_pdf(response: Response):  # pyright: ignore[reportUnusedFunction]
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -690,7 +685,7 @@ def run_web_app(
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            def cleanup_zip(response: Response) -> Response:
+            def cleanup_zip(response: Response):  # pyright: ignore[reportUnusedFunction]
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
