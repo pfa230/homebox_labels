@@ -11,13 +11,12 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import Dict, Tuple, Union
+from typing import Union
 
 from fontTools.ttLib import TTFont as VariableTTFont
 from fontTools.varLib import instancer
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont as ReportLabTTFont
-
 
 FONTS_DIR = Path(__file__).resolve().parent / "fonts"
 
@@ -31,7 +30,7 @@ class LocalVariableFont:
 @dataclass(frozen=True)
 class LocalStaticFont:
     family_name: str
-    files: Dict[int, str]
+    files: dict[int, str]
 
 
 FontSource = Union[LocalVariableFont, LocalStaticFont]
@@ -50,7 +49,7 @@ def _font_key(name: str) -> str:
 # family_name="Lexend",
 # family_name="NotoSans",
 # family_name="IBMPlexSansCondensed",
-FONT_SOURCES: Dict[str, FontSource] = {
+FONT_SOURCES: dict[str, FontSource] = {
     _font_key("Inter"): LocalVariableFont(
         family_name="Inter",
         filename="InterVariable.ttf",
@@ -91,9 +90,9 @@ class VariableFontManager:
         self.font_path = font_path
         self._font_bytes = font_path.read_bytes()
         self._weight_min, self._weight_max = self._discover_weight_axis()
-        self._registered: Dict[str, str] = {}
+        self._registered: dict[str, str] = {}
 
-    def _discover_weight_axis(self) -> Tuple[float, float]:
+    def _discover_weight_axis(self) -> tuple[float, float]:
         font = VariableTTFont(BytesIO(self._font_bytes))
         try:
             axis = next(ax for ax in font["fvar"].axes if ax.axisTag == "wght")
@@ -160,10 +159,10 @@ class VariableFontManager:
 
 class FontRegistry:
     def __init__(self) -> None:
-        self._variable_managers: Dict[str, VariableFontManager] = {}
+        self._variable_managers: dict[str, VariableFontManager] = {}
 
         # map (family_name, weight) -> registered font name
-        self._static_registry: Dict[Tuple[str, int], str] = {}
+        self._static_registry: dict[tuple[str, int], str] = {}
 
     def get_font_name(self, family_key: str, weight: float) -> str:
         info = FONT_SOURCES.get(family_key)

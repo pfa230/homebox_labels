@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import Iterable
 
 from reportlab.pdfbase.pdfmetrics import stringWidth
 
@@ -16,7 +16,7 @@ def wrap_text_to_width_multiline(
     *,
     min_font_size: float | None = None,
     step: float = 0.5,
-) -> tuple[List[str], float]:
+) -> tuple[list[str], float]:
     """Wrap ``text`` to as many lines as fit width and optional height, adjusting font size.
 
     Returns ``(lines, chosen_font_size)``.
@@ -82,8 +82,8 @@ def wrap_text_to_width(
     if not words:
         return []
 
-    lines: List[str] = []
-    current: List[str] = []
+    lines: list[str] = []
+    current: list[str] = []
     for word in words:
         tentative = " ".join(current + [word]) if current else word
         if stringWidth(tentative, font_name, font_size) <= max_width_pt:

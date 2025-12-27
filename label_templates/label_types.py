@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
 
 
 @dataclass(frozen=True)
@@ -13,7 +12,7 @@ class LabelContent:
     url: str
     id: str = ""
     parent: str = ""
-    labels: List[str] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list[str])
     description: str = ""
     template_options: dict[str, str] | None = None
 

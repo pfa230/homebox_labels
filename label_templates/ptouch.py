@@ -49,7 +49,7 @@ class Template(LabelTemplate):
     def __init__(self) -> None:
         super().__init__()
 
-    def available_options(self) -> list[TemplateOption]:  # type: ignore[override]
+    def available_options(self) -> list[TemplateOption]:
         # Expose a minimal type that renders only QR + display_id and rotates output 90°.
         return [
             TemplateOption(
@@ -286,6 +286,8 @@ class Template(LabelTemplate):
 
     def _compute_width_minimal(self, title: str) -> float:
         qr_size = LABEL_HEIGHT
-        text_width = stringWidth(title, _FONTS.title.font_name, _FONTS.title.size)
-        required = LABEL_MARGIN_LEFT + qr_size + QR_TEXT_GAP + text_width + LABEL_MARGIN_RIGHT
+        text_width = stringWidth(
+            title, _FONTS.title.font_name, _FONTS.title.size)
+        required = LABEL_MARGIN_LEFT + qr_size + \
+            QR_TEXT_GAP + text_width + LABEL_MARGIN_RIGHT
         return min(max(required, MIN_WIDTH), MAX_WIDTH)

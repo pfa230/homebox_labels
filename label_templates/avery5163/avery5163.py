@@ -36,8 +36,8 @@ class Outline(StrEnum):
 class Template(LabelTemplate):
     """Unified Avery 5163 template supporting per-label options."""
 
-    _DEFAULT_ORIENTATION = Orientation.HORIZONTAL
-    _DEFAULT_OUTLINE = Outline.OFF
+    _DEFAULT_ORIENTATION: Orientation = Orientation.HORIZONTAL
+    _DEFAULT_OUTLINE: Outline = Outline.OFF
     _slot_index: int
 
     def __init__(self) -> None:

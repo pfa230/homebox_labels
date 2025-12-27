@@ -3,7 +3,7 @@
 
 import argparse
 import os
-from typing import Optional, Sequence
+from typing import Sequence
 
 from dotenv import load_dotenv
 
@@ -30,7 +30,7 @@ def _parse_template_options(option_pairs: Sequence[str]) -> dict[str, str]:
     return parsed
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for generating the Homebox label PDF."""
 
     parser = argparse.ArgumentParser(

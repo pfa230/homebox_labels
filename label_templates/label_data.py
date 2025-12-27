@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import Iterable
 
 from domain_types import Location, Asset
 from label_templates.label_types import LabelContent
@@ -30,7 +30,7 @@ def build_asset_ui_url(base_ui: str, item_id: str) -> str:
 def locations_to_label_contents(
     locations: Iterable[Location],
     base_ui: str,
-) -> List[LabelContent]:
+) -> list[LabelContent]:
     base_ui_clean = base_ui.rstrip("/")
     return [location_to_label_content(loc, base_ui_clean) for loc in locations]
 
@@ -38,7 +38,7 @@ def locations_to_label_contents(
 def assets_to_label_contents(
     assets: Iterable[Asset],
     base_ui: str,
-) -> List[LabelContent]:
+) -> list[LabelContent]:
     base_ui_clean = base_ui.rstrip("/")
     return [asset_to_label_content(asset, base_ui_clean) for asset in assets]
 

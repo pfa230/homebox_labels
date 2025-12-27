@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 from label_templates.label_types import LabelContent, LabelGeometry
 
@@ -14,7 +13,7 @@ class TemplateOption:
     """Represents a configurable option exposed by a label template."""
 
     name: str
-    possible_values: List[str]
+    possible_values: list[str]
 
 
 class LabelTemplate(ABC):
@@ -24,7 +23,7 @@ class LabelTemplate(ABC):
         self.reset()
 
     @property
-    def page_size(self) -> Optional[Tuple[float, float]]:
+    def page_size(self) -> tuple[float, float] | None:
         """Return the page size in points or ``None`` for dynamic sizing."""
 
         return None
@@ -51,7 +50,7 @@ class LabelTemplate(ABC):
     ) -> bytes:
         """Return PNG bytes for ``content`` rendered in the next slot."""
 
-    def available_options(self) -> List[TemplateOption]:
+    def available_options(self) -> list[TemplateOption]:
         """Return user-tunable options supported by the template."""
 
         return []

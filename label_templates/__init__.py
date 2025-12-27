@@ -31,12 +31,8 @@ def get_template(
 
     module = _load_template_module(key)
 
-    template_cls: type[LabelTemplate] | None = getattr(
-        module,
-        "Template",
-        None,
-    )
-    if not template_cls or not issubclass(template_cls, LabelTemplate):
+    template_cls = getattr(module, "Template", None)
+    if not isinstance(template_cls, type) or not issubclass(template_cls, LabelTemplate):
         raise SystemExit(
             f"Template '{name}' does not export a valid Template class"
         )

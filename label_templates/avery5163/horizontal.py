@@ -118,7 +118,8 @@ def _render_col_2(canvas_obj: canvas.Canvas, content: LabelContent) -> None:
         )
         if lines:
             ascent = getAscent(_FONTS.content.font_name) / 1000.0 * chosen_size
-            descent = abs(getDescent(_FONTS.content.font_name)) / 1000.0 * chosen_size
+            descent = abs(getDescent(_FONTS.content.font_name)) / \
+                1000.0 * chosen_size
             line_height = ascent + descent
             block_height = len(lines) * line_height
             region_top = LABEL_H - LABEL_PADDING
@@ -244,7 +245,7 @@ def _draw_text_block(
                 )
 
     current = baseline
-    for idx, line in enumerate(visible_lines):
+    for line in visible_lines:
         if current < font_size:
             break
         canvas_obj.setFont(font_name, font_size)

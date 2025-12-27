@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Sequence
+from typing import Sequence
 
 from homebox_api import HomeboxApiManager
 from domain_types import Location, Asset
@@ -16,8 +16,8 @@ __all__ = [
 
 def _filter_locations_by_name(
     locations: Sequence[Location],
-    pattern: Optional[str],
-) -> List[Location]:
+    pattern: str | None,
+) -> list[Location]:
     """Apply the name regex filter declared by the user."""
 
     if not pattern:
@@ -35,14 +35,14 @@ def _filter_locations_by_name(
 
 def collect_locations(
     api_manager: HomeboxApiManager,
-    name_pattern: Optional[str],
-) -> List[Location]:
+    name_pattern: str | None,
+) -> list[Location]:
     """Fetch locations as domain objects."""
 
     locations = api_manager.list_locations()
     filtered_locations = _filter_locations_by_name(locations, name_pattern)
     filtered_locations.sort(
-        key=lambda loc: (loc.id if isinstance(loc, Location) else loc.get("id", "")),
+        key=lambda loc: loc.id,
         reverse=True,
     )
 
@@ -51,9 +51,9 @@ def collect_locations(
 
 def collect_assets(
     api_manager: HomeboxApiManager,
-    name_pattern: Optional[str],
-    location_id: Optional[str] = None,
-) -> List[Asset]:
+    name_pattern: str | None,
+    location_id: str | None = None,
+) -> list[Asset]:
     """Fetch assets as domain objects."""
 
     items = api_manager.list_items(location_id=location_id)

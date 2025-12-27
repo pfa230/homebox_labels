@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
 
 
 @dataclass(frozen=True)
@@ -11,9 +10,9 @@ class Location:
     name: str
     parent: str
     asset_count: int = 0
-    labels: List[str] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list[str])
     description: str = ""
-    path: List[str] = field(default_factory=list)
+    path: list[str] = field(default_factory=list[str])
 
 
 @dataclass(frozen=True)
@@ -24,5 +23,5 @@ class Asset:
     location_id: str
     location: str
     parent_asset: str
-    labels: List[str] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list[str])
     description: str = ""

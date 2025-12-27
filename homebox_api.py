@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Set
+from typing import Iterable
 
 from domain_types import Location, Asset
 
@@ -13,6 +13,14 @@ from homebox_client import ApiClient, Configuration
 from homebox_client.api.authentication_api import AuthenticationApi
 from homebox_client.api.locations_api import LocationsApi
 from homebox_client.api.items_api import ItemsApi
+from homebox_client.models.repo_item_out import RepoItemOut
+from homebox_client.models.repo_item_summary import RepoItemSummary
+from homebox_client.models.repo_location_out import RepoLocationOut
+from homebox_client.models.repo_location_out_count import RepoLocationOutCount
+from homebox_client.models.repo_pagination_result_repo_item_summary import (
+    RepoPaginationResultRepoItemSummary,
+)
+from homebox_client.models.repo_tree_item import RepoTreeItem
 
 # Default timeout (in seconds) for Homebox API requests.
 DEFAULT_TIMEOUT = 30
@@ -46,37 +54,40 @@ class HomeboxApiManager:
 
         return self._api_client
 
-    def list_locations(self) -> List[Location]:
+    def list_locations(self) -> list[Location]:
         """Return locations as domain objects."""
 
-        locations_raw = self._locations_api.v1_locations_get(
-            _request_timeout=self.timeout
-        ) or []
+        locations_raw: list[RepoLocationOutCount] = (
+            self._locations_api.v1_locations_get(
+                _request_timeout=self.timeout
+            )
+            or []
+        )
         if not locations_raw:
             return []
-        loc_ids: List[str] = []
+        loc_ids: list[str] = []
         for loc in locations_raw:
-            loc_id = getattr(loc, "id", "") or ""
-            if isinstance(loc_id, str) and loc_id:
+            loc_id = loc.id or ""
+            if loc_id:
                 loc_ids.append(loc_id)
-        detail_map: Dict[str, Dict] = self.get_location_details(loc_ids)
-        tree = self.get_location_tree()
+        detail_map = self.get_location_details(loc_ids)
+        tree: list[RepoTreeItem] = self.get_location_tree()
         path_map = self._build_location_paths(tree)
         labels_map, asset_count_map = self.get_location_item_labels(loc_ids)
 
-        domain: List[Location] = []
+        domain: list[Location] = []
         for loc in locations_raw:
-            loc_id = getattr(loc, "id", "") or ""
-            detail_payload = detail_map.get(loc_id, {})
-            description = (
-                detail_payload.get("description")
-                or getattr(loc, "description", "")
+            loc_id = loc.id or ""
+            detail_payload = detail_map.get(loc_id)
+            description = str(
+                (detail_payload.description if detail_payload else None)
+                or loc.description
                 or ""
             ).strip()
             label_names = labels_map.get(loc_id, [])
             asset_count = asset_count_map.get(loc_id, 0)
 
-            title, content = self._split_name_content(getattr(loc, "name", "") or "")
+            title, content = self._split_name_content(loc.name or "")
 
             path_list = path_map.get(loc_id, [])
             parent = path_list[-2] if len(path_list) >= 2 else ""
@@ -95,27 +106,27 @@ class HomeboxApiManager:
             )
         return domain
 
-    def get_location_tree(self) -> List[Dict]:
+    def get_location_tree(self) -> list[RepoTreeItem]:
         """Return the hierarchical tree of locations."""
 
-        nodes = self._locations_api.v1_locations_tree_get(
+        nodes: list[RepoTreeItem] = self._locations_api.v1_locations_tree_get(
             _request_timeout=self.timeout
         ) or []
-        return [node.to_dict() for node in nodes]
+        return nodes
 
-    def get_location_detail(self, location_id: str) -> Dict:
+    def get_location_detail(self, location_id: str) -> RepoLocationOut:
         """Fetch detail payload for a specific location."""
 
-        detail = self._locations_api.v1_locations_id_get(
+        detail: RepoLocationOut = self._locations_api.v1_locations_id_get(
             location_id,
             _request_timeout=self.timeout,
         )
-        return detail.to_dict()
+        return detail
 
-    def get_location_details(self, loc_ids: Iterable[str]) -> Dict[str, Dict]:
+    def get_location_details(self, loc_ids: Iterable[str]) -> dict[str, RepoLocationOut]:
         """Fetch details for the provided collection of location IDs."""
 
-        details: Dict[str, Dict] = {}
+        details: dict[str, RepoLocationOut] = {}
         for loc_id in loc_ids:
             if not loc_id:
                 continue
@@ -126,11 +137,11 @@ class HomeboxApiManager:
         self,
         loc_ids: Iterable[str],
         page_size: int = 100,
-    ) -> tuple[Dict[str, List[str]], Dict[str, int]]:
+    ) -> tuple[dict[str, list[str]], dict[str, int]]:
         """Collect label lists and unique asset counts keyed by location id."""
 
-        labels_map: Dict[str, List[str]] = {}
-        counts_map: Dict[str, int] = {}
+        labels_map: dict[str, list[str]] = {}
+        counts_map: dict[str, int] = {}
         for loc_id in loc_ids:
             if not loc_id:
                 continue
@@ -142,19 +153,19 @@ class HomeboxApiManager:
             counts_map[loc_id] = count
         return labels_map, counts_map
 
-    def list_items(self, page_size: int = 100, location_id: str | None = None) -> List[Asset]:
+    def list_items(self, page_size: int = 100, location_id: str | None = None) -> list[Asset]:
         """Return assets as domain objects."""
 
-        items: List[Asset] = []
+        items: list[Asset] = []
         page = 1
         while True:
-            response = self._items_api.v1_items_get(
+            response: RepoPaginationResultRepoItemSummary = self._items_api.v1_items_get(
                 page=page,
                 page_size=page_size,
                 locations=[location_id] if location_id else None,
                 _request_timeout=self.timeout,
             )
-            page_items = response.items or []
+            page_items: list[RepoItemSummary] = response.items or []
             items.extend(self._convert_items(page_items))
 
             total = response.total or 0
@@ -166,49 +177,50 @@ class HomeboxApiManager:
 
         return items
 
-    def _convert_items(self, items_raw: Iterable[object] | None) -> List[Asset]:
-        assets: List[Asset] = []
+    def _convert_items(self, items_raw: Iterable[RepoItemSummary] | None) -> list[Asset]:
+        assets: list[Asset] = []
         for item in items_raw or []:
-            item_id = getattr(item, "id", "") or ""
-            label_names = []
-            for lbl in getattr(item, "labels", None) or []:
-                name = (getattr(lbl, "name", "") or "").strip()
+            item_id = item.id or ""
+            label_names: list[str] = []
+            for lbl in item.labels or []:
+                name = (lbl.name or "").strip()
                 if name:
                     label_names.append(name)
-            loc = getattr(item, "location", None)
-            location_name = (getattr(loc, "name", "") or "").strip() if loc else ""
-            location_id = (getattr(loc, "id", "") or "").strip() if loc else ""
+            loc = item.location
+            location_name = (loc.name or "").strip() if loc else ""
+            location_id = (loc.id or "").strip() if loc else ""
             parent_asset_name = (
-                (getattr(item, "parent_name", None) or getattr(item, "parent", None) or "")
+                (getattr(item, "parent_name", None)
+                 or getattr(item, "parent", None) or "")
                 or ""
             )
             assets.append(
                 Asset(
                     id=item_id,
-                    display_id=getattr(item, "asset_id", "") or "",
-                    name=getattr(item, "name", "") or "",
+                    display_id=item.asset_id or "",
+                    name=item.name or "",
                     location_id=location_id,
                     location=location_name,
                     parent_asset=parent_asset_name.strip(),
                     labels=label_names,
-                    description=(getattr(item, "description", "") or "").strip(),
+                    description=(item.description or "").strip(),
                 )
             )
         return assets
 
-    def get_item_detail(self, item_id: str) -> Dict:
+    def get_item_detail(self, item_id: str) -> RepoItemOut:
         """Fetch detail payload for a specific item."""
 
-        detail = self._items_api.v1_items_id_get(
+        detail: RepoItemOut = self._items_api.v1_items_id_get(
             item_id,
             _request_timeout=self.timeout,
         )
-        return detail.to_dict()
+        return detail
 
-    def get_item_details(self, item_ids: Iterable[str]) -> Dict[str, Dict]:
+    def get_item_details(self, item_ids: Iterable[str]) -> dict[str, RepoItemOut]:
         """Fetch details for the provided collection of item IDs."""
 
-        details: Dict[str, Dict] = {}
+        details: dict[str, RepoItemOut] = {}
         for item_id in item_ids:
             if not item_id:
                 continue
@@ -219,25 +231,25 @@ class HomeboxApiManager:
         self,
         loc_id: str,
         page_size: int = 100,
-    ) -> tuple[List[str], int]:
+    ) -> tuple[list[str], int]:
         """Return (sorted unique label names, unique asset count) for a location."""
 
-        collected: Set[str] = set()
-        asset_ids: Set[str] = set()
+        collected: set[str] = set()
+        asset_ids: set[str] = set()
         page = 1
         while True:
-            response = self._items_api.v1_items_get(
+            response: RepoPaginationResultRepoItemSummary = self._items_api.v1_items_get(
                 page=page,
                 page_size=page_size,
                 locations=[loc_id],
                 _request_timeout=self.timeout,
             )
-            items = response.items or []
+            items: list[RepoItemSummary] = response.items or []
             for item in items:
-                item_id = (getattr(item, "id", "") or "").strip()
+                item_id = (item.id or "").strip()
                 if item_id:
                     asset_ids.add(item_id)
-                for label in getattr(item, "labels", None) or []:
+                for label in item.labels or []:
                     name = (label.name or "").strip()
                     if name:
                         collected.add(name)
@@ -271,21 +283,19 @@ class HomeboxApiManager:
         return ApiClient(configuration)
 
     @staticmethod
-    def _build_location_paths(tree: List[Dict]) -> Dict[str, List[str]]:
-        paths: Dict[str, List[str]] = {}
+    def _build_location_paths(tree: list[RepoTreeItem]) -> dict[str, list[str]]:
+        paths: dict[str, list[str]] = {}
 
-        def walk(node: Dict, ancestors: List[str]) -> None:
-            if not isinstance(node, dict):
-                return
-            node_type = (node.get("type") or node.get("nodeType") or "").lower()
+        def walk(node: RepoTreeItem, ancestors: list[str]) -> None:
+            node_type = (node.type or "").lower()
             if node_type and node_type != "location":
                 return
-            name = (node.get("name") or "").strip() or "Unnamed"
+            name = (node.name or "").strip() or "Unnamed"
             current_path = ancestors + [name]
-            loc_id = node.get("id")
+            loc_id = node.id
             if loc_id:
                 paths[loc_id] = current_path
-            for child in node.get("children") or []:
+            for child in node.children or []:
                 walk(child, current_path)
 
         for root in tree or []:
