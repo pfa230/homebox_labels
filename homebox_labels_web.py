@@ -123,6 +123,18 @@ def run_web_app(
         ids = form.getlist("location_id")
         return [loc_id for loc_id in ids if loc_id]
 
+    def _dedupe_base_ids(selected_ids: List[str]) -> List[str]:
+        """Collapse copy IDs back to base IDs while preserving order."""
+        base_ids: List[str] = []
+        seen: set[str] = set()
+        for loc_id in selected_ids:
+            base_id = loc_id.split("__copy", 1)[0]
+            if not base_id or base_id in seen:
+                continue
+            seen.add(base_id)
+            base_ids.append(base_id)
+        return base_ids
+
     def _parse_template_options(
         form: ImmutableMultiDict,
         location_ids: List[str],
@@ -219,6 +231,7 @@ def run_web_app(
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("locations_index", error="no-selection"))
+        base_ids = _dedupe_base_ids(selected_ids)
 
         selected_template = request.form.get("template_name") or template_choices[0]
 
@@ -247,7 +260,7 @@ def run_web_app(
         try:
             locs = collect_locations(api_manager, name_pattern=None)
             loc_by_id = {loc.id: loc for loc in locs}
-            ordered = [loc_by_id[loc_id] for loc_id in selected_ids if loc_id in loc_by_id]
+            ordered = [loc_by_id[loc_id] for loc_id in base_ids if loc_id in loc_by_id]
             label_contents = locations_to_label_contents(ordered, base_ui)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("locations_index", error="generation", message=str(exc)))
@@ -492,6 +505,7 @@ def run_web_app(
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("assets_index", error="no-selection"))
+        base_ids = _dedupe_base_ids(selected_ids)
 
         selected_template = request.form.get("template_name") or template_choices[0]
 
@@ -519,7 +533,7 @@ def run_web_app(
 
         try:
             assets = collect_assets(api_manager, name_pattern=None)
-            assets = [a for a in assets if a.id in selected_ids]
+            assets = [a for a in assets if a.id in base_ids]
             label_contents = assets_to_label_contents(assets, api_manager.base_url)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("assets_index", error="generation", message=str(exc)))
