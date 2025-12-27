@@ -7,3 +7,4 @@ PyMuPDF==1.26.5
 -e ../homebox_client
 Flask==3.0.3
 flake8==7.3.0
+flake8-pyproject==1.2.3
