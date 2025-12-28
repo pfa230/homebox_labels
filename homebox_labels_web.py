@@ -156,8 +156,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         return redirect(url_for("locations_index"))
 
     @app.route("/locations", methods=["GET"])
-    # pyright: ignore[reportUnusedFunction]
-    def locations_index() -> Response | str:
+    def locations_index() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         try:
             locations = collect_locations(api_manager, name_pattern=None)
         except Exception as exc:  # pragma: no cover - best effort message
@@ -221,8 +220,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         )
 
     @app.route("/locations/choose", methods=["POST"])
-    # pyright: ignore[reportUnusedFunction]
-    def locations_choose() -> Response | str:
+    def locations_choose() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("locations_index", error="no-selection"))
@@ -294,8 +292,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         )
 
     @app.route("/locations/generate", methods=["POST"])
-    # pyright: ignore[reportUnusedFunction]
-    def locations_generate() -> Response | str:
+    def locations_generate() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("locations_index", error="no-selection"))
@@ -379,8 +376,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             download_name = "homebox_labels.pdf"
 
             @after_this_request
-            # pyright: ignore[reportUnusedFunction]
-            def cleanup_pdf(response: Response):
+            def cleanup_pdf(response: Response) -> Response:  # pyright: ignore[reportUnusedFunction]
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -421,8 +417,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            # pyright: ignore[reportUnusedFunction]
-            def cleanup_zip(response: Response):
+            def cleanup_zip(response: Response) -> Response:  # pyright: ignore[reportUnusedFunction]
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
@@ -442,8 +437,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
 
     # Asset routes
     @app.route("/assets", methods=["GET"])
-    # pyright: ignore[reportUnusedFunction]
-    def assets_index() -> Response | str:
+    def assets_index() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         try:
             location_filter = (request.args.get("location") or "").strip()
             assets = collect_assets(
@@ -503,8 +497,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         )
 
     @app.route("/assets/choose", methods=["POST"])
-    # pyright: ignore[reportUnusedFunction]
-    def assets_choose() -> Response | str:
+    def assets_choose() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("assets_index", error="no-selection"))
@@ -575,8 +568,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         )
 
     @app.route("/assets/generate", methods=["POST"])
-    # pyright: ignore[reportUnusedFunction]
-    def assets_generate() -> Response | str:
+    def assets_generate() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("assets_index", error="no-selection"))
@@ -657,8 +649,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                 return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
             @after_this_request
-            # pyright: ignore[reportUnusedFunction]
-            def cleanup_pdf(response: Response):
+            def cleanup_pdf(response: Response) -> Response:  # pyright: ignore[reportUnusedFunction]
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -698,8 +689,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            # pyright: ignore[reportUnusedFunction]
-            def cleanup_zip(response: Response):
+            def cleanup_zip(response: Response) -> Response:  # pyright: ignore[reportUnusedFunction]
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:

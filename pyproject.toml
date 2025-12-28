@@ -19,6 +19,4 @@ exclude = [
   "**/__pycache__",
   "**/.ruff_cache",
 ]
-venvPath = "."
-venv = ".venv"
 stubPath = "stubs"
