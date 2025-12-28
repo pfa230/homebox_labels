@@ -38,11 +38,13 @@ from label_templates import get_template, list_templates
 
 __all__ = ["run_web_app", "create_app", "create_app_from_env"]
 
+
 def create_app(api_manager: HomeboxApiManager) -> Flask:
     """Create the Flask app wired to the provided API manager."""
     template_dir = Path(__file__).resolve().parent / "templates"
     app = Flask(__name__, template_folder=str(template_dir))
-    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "homebox-labels-ui")
+    app.config["SECRET_KEY"] = os.getenv(
+        "FLASK_SECRET_KEY", "homebox-labels-ui")
 
     base_ui = api_manager.base_url or ""
 
@@ -60,7 +62,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         if sort_field not in sortable_fields:
             sort_field = default_field
 
-        sort_direction = request.args.get("direction", default_direction).lower()
+        sort_direction = request.args.get(
+            "direction", default_direction).lower()
         if sort_direction not in {"asc", "desc"}:
             sort_direction = default_direction
 
@@ -91,7 +94,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
     ) -> dict[str, str]:
         links: dict[str, str] = {}
         for field in sortable_fields:
-            next_direction = "desc" if (field == sort_field and sort_direction == "asc") else "asc"
+            next_direction = "desc" if (
+                field == sort_field and sort_direction == "asc") else "asc"
             params: dict[str, Any] = {
                 "sort": field,
                 "direction": next_direction,
@@ -152,7 +156,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         return redirect(url_for("locations_index"))
 
     @app.route("/locations", methods=["GET"])
-    def locations_index() -> Response | str:  # pyright: ignore[reportUnusedFunction]
+    # pyright: ignore[reportUnusedFunction]
+    def locations_index() -> Response | str:
         try:
             locations = collect_locations(api_manager, name_pattern=None)
         except Exception as exc:  # pragma: no cover - best effort message
@@ -216,13 +221,15 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         )
 
     @app.route("/locations/choose", methods=["POST"])
-    def locations_choose() -> Response | str:  # pyright: ignore[reportUnusedFunction]
+    # pyright: ignore[reportUnusedFunction]
+    def locations_choose() -> Response | str:
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("locations_index", error="no-selection"))
         base_ids = _dedupe_base_ids(selected_ids)
 
-        selected_template = request.form.get("template_name") or template_choices[0]
+        selected_template = request.form.get(
+            "template_name") or template_choices[0]
 
         # Validate template name exists
         if selected_template.lower() not in [t.lower() for t in template_choices]:
@@ -249,7 +256,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         try:
             locs = collect_locations(api_manager, name_pattern=None)
             loc_by_id = {loc.id: loc for loc in locs}
-            ordered = [loc_by_id[loc_id] for loc_id in base_ids if loc_id in loc_by_id]
+            ordered = [loc_by_id[loc_id]
+                       for loc_id in base_ids if loc_id in loc_by_id]
             label_contents = locations_to_label_contents(ordered, base_ui)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("locations_index", error="generation", message=str(exc)))
@@ -259,7 +267,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             for copy_idx in range(copies):
                 copy_id = f"{label.id}__copy{copy_idx}" if copies > 1 else label.id
                 display_name = (
-                    " ".join(filter(None, [label.display_id, label.name])).strip() or "Unnamed"
+                    " ".join(
+                        filter(None, [label.display_id, label.name])).strip() or "Unnamed"
                 )
                 rows.append(
                     {
@@ -285,7 +294,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         )
 
     @app.route("/locations/generate", methods=["POST"])
-    def locations_generate() -> Response | str:  # pyright: ignore[reportUnusedFunction]
+    # pyright: ignore[reportUnusedFunction]
+    def locations_generate() -> Response | str:
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("locations_index", error="no-selection"))
@@ -369,7 +379,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             download_name = "homebox_labels.pdf"
 
             @after_this_request
-            def cleanup_pdf(response: Response):  # pyright: ignore[reportUnusedFunction]
+            # pyright: ignore[reportUnusedFunction]
+            def cleanup_pdf(response: Response):
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -410,7 +421,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            def cleanup_zip(response: Response):  # pyright: ignore[reportUnusedFunction]
+            # pyright: ignore[reportUnusedFunction]
+            def cleanup_zip(response: Response):
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
@@ -430,7 +442,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
 
     # Asset routes
     @app.route("/assets", methods=["GET"])
-    def assets_index() -> Response | str:  # pyright: ignore[reportUnusedFunction]
+    # pyright: ignore[reportUnusedFunction]
+    def assets_index() -> Response | str:
         try:
             location_filter = (request.args.get("location") or "").strip()
             assets = collect_assets(
@@ -490,13 +503,15 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         )
 
     @app.route("/assets/choose", methods=["POST"])
-    def assets_choose() -> Response | str:  # pyright: ignore[reportUnusedFunction]
+    # pyright: ignore[reportUnusedFunction]
+    def assets_choose() -> Response | str:
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("assets_index", error="no-selection"))
         base_ids = _dedupe_base_ids(selected_ids)
 
-        selected_template = request.form.get("template_name") or template_choices[0]
+        selected_template = request.form.get(
+            "template_name") or template_choices[0]
 
         # Validate template name exists
         if selected_template.lower() not in [t.lower() for t in template_choices]:
@@ -523,7 +538,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         try:
             assets = collect_assets(api_manager, name_pattern=None)
             assets = [a for a in assets if a.id in base_ids]
-            label_contents = assets_to_label_contents(assets, api_manager.base_url)
+            label_contents = assets_to_label_contents(
+                assets, api_manager.base_url)
         except Exception as exc:  # pragma: no cover
             return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
@@ -532,7 +548,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             for copy_idx in range(copies):
                 copy_id = f"{label.id}__copy{copy_idx}" if copies > 1 else label.id
                 display_name = (
-                    " ".join(filter(None, [label.display_id, label.name])).strip() or "Unnamed"
+                    " ".join(
+                        filter(None, [label.display_id, label.name])).strip() or "Unnamed"
                 )
                 rows.append(
                     {
@@ -558,7 +575,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         )
 
     @app.route("/assets/generate", methods=["POST"])
-    def assets_generate() -> Response | str:  # pyright: ignore[reportUnusedFunction]
+    # pyright: ignore[reportUnusedFunction]
+    def assets_generate() -> Response | str:
         selected_ids = _parse_selected_ids(request.form)
         if not selected_ids:
             return redirect(url_for("assets_index", error="no-selection"))
@@ -639,7 +657,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                 return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
             @after_this_request
-            def cleanup_pdf(response: Response):  # pyright: ignore[reportUnusedFunction]
+            # pyright: ignore[reportUnusedFunction]
+            def cleanup_pdf(response: Response):
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -679,7 +698,8 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            def cleanup_zip(response: Response):  # pyright: ignore[reportUnusedFunction]
+            # pyright: ignore[reportUnusedFunction]
+            def cleanup_zip(response: Response):
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
@@ -742,8 +762,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--port",
         type=int,
-        default=5000,
-        help="Port for the web UI (default: 5000).",
+        default=4000,
+        help="Port for the web UI (default: 4000).",
     )
 
     args = parser.parse_args(argv)
