@@ -21,3 +21,4 @@ exclude = [
 ]
 venvPath = "."
 venv = ".venv"
+stubPath = "stubs"

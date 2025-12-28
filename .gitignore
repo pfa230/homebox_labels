@@ -2,6 +2,13 @@
 *.pdf
 *.png
 .ruff_cache
+.mypy_cache
+.pytest_cache
+.coverage
 .venv
 .vscode
 *.pyc
+__pycache__
+*.egg-info
+dist
+build
