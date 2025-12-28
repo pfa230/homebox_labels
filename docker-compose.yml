@@ -1,0 +1,11 @@
+services:
+  homebox-labels:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      HOMEBOX_API_URL: ${HOMEBOX_API_URL}
+      HOMEBOX_USERNAME: ${HOMEBOX_USERNAME}
+      HOMEBOX_PASSWORD: ${HOMEBOX_PASSWORD}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-homebox-labels-ui}
+    restart: unless-stopped

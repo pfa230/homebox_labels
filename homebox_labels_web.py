@@ -36,16 +36,10 @@ from label_templates.label_types import LabelContent
 from label_templates import get_template, list_templates
 
 
-__all__ = ["run_web_app"]
+__all__ = ["run_web_app", "create_app", "create_app_from_env"]
 
-
-def run_web_app(
-    api_manager: HomeboxApiManager,
-    host: str,
-    port: int,
-) -> None:
-    """Launch a lightweight Flask app for interactive label selection."""
-
+def create_app(api_manager: HomeboxApiManager) -> Flask:
+    """Create the Flask app wired to the provided API manager."""
     template_dir = Path(__file__).resolve().parent / "templates"
     app = Flask(__name__, template_folder=str(template_dir))
     app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "homebox-labels-ui")
@@ -702,6 +696,28 @@ def run_web_app(
                 as_attachment=True,
                 download_name="homebox_labels_png.zip",
             )
+
+    return app
+
+
+def create_app_from_env() -> Flask:
+    """Create the Flask app using HOMEBOX_* environment variables."""
+    load_dotenv()
+    api_manager = HomeboxApiManager(
+        base_url=os.getenv("HOMEBOX_API_URL", ""),
+        username=os.getenv("HOMEBOX_USERNAME", ""),
+        password=os.getenv("HOMEBOX_PASSWORD", ""),
+    )
+    return create_app(api_manager)
+
+
+def run_web_app(
+    api_manager: HomeboxApiManager,
+    host: str,
+    port: int,
+) -> None:
+    """Launch a lightweight Flask app for interactive label selection."""
+    app = create_app(api_manager)
 
     # Enable reloader so code changes auto-restart the dev server.
     use_reloader_env = os.getenv("USE_RELOADER")
