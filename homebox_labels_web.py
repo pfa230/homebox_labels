@@ -376,7 +376,9 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             download_name = "homebox_labels.pdf"
 
             @after_this_request
-            def cleanup_pdf(response: Response) -> Response:  # pyright: ignore[reportUnusedFunction]
+            def cleanup_pdf(  # pyright: ignore[reportUnusedFunction]
+                response: Response,
+            ) -> Response:
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -417,7 +419,9 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            def cleanup_zip(response: Response) -> Response:  # pyright: ignore[reportUnusedFunction]
+            def cleanup_zip(  # pyright: ignore[reportUnusedFunction]
+                response: Response,
+            ) -> Response:
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
@@ -649,7 +653,9 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                 return redirect(url_for("assets_index", error="generation", message=str(exc)))
 
             @after_this_request
-            def cleanup_pdf(response: Response) -> Response:  # pyright: ignore[reportUnusedFunction]
+            def cleanup_pdf(  # pyright: ignore[reportUnusedFunction]
+                response: Response,
+            ) -> Response:
                 try:
                     os.remove(tmp_file.name)
                 except OSError:
@@ -689,7 +695,9 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     zf.write(f, arcname=f.name)
 
             @after_this_request
-            def cleanup_zip(response: Response) -> Response:  # pyright: ignore[reportUnusedFunction]
+            def cleanup_zip(  # pyright: ignore[reportUnusedFunction]
+                response: Response,
+            ) -> Response:
                 try:
                     os.remove(zip_tmp.name)
                 except OSError:
