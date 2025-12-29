@@ -98,10 +98,32 @@ Default UI is on `http://127.0.0.1:4000` when running locally.
 ## Run with Docker (Production)
 
 ```bash
-docker compose up --build
+docker pull ghcr.io/pfa230/homebox_labels:latest
+docker run --rm -p 4000:4000 \
+  -e HOMEBOX_API_URL=... \
+  -e HOMEBOX_USERNAME=... \
+  -e HOMEBOX_PASSWORD=... \
+  ghcr.io/pfa230/homebox_labels:latest
 ```
 
-The compose file binds the app to `http://localhost:4000`.
+The image is published as `ghcr.io/pfa230/homebox_labels:<tag>`
+and `ghcr.io/pfa230/homebox_labels:latest`.
+
+Example `docker-compose.yml`:
+
+```yaml
+services:
+  homebox-labels:
+    image: ghcr.io/pfa230/homebox_labels:latest
+    ports:
+      - "4000:4000"
+    environment:
+      HOMEBOX_API_URL: ${HOMEBOX_API_URL}
+      HOMEBOX_USERNAME: ${HOMEBOX_USERNAME}
+      HOMEBOX_PASSWORD: ${HOMEBOX_PASSWORD}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-homebox-labels-ui}
+    restart: unless-stopped
+```
 
 ## Development
 
