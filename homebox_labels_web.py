@@ -34,6 +34,7 @@ from label_templates.label_data import (
 from label_templates.label_generation import render
 from label_templates.label_types import LabelContent
 from label_templates import get_template, list_templates
+from label_templates.base import LabelTemplate, TemplateOption
 
 
 __all__ = ["run_web_app", "create_app", "create_app_from_env"]
@@ -51,6 +52,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
     template_choices = list(list_templates())
     if not template_choices:
         raise RuntimeError("No label templates are registered.")
+    template_lookup = {name.lower(): name for name in template_choices}
 
     sortable_fields = ("id", "name", "parent", "location")
 
@@ -151,6 +153,124 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
 
         return options_by_location
 
+    def _resolve_template_name(requested: str | None) -> str:
+        selected = (requested or "").strip()
+        if not selected:
+            raise ValueError("Template selection is required.")
+        resolved = template_lookup.get(selected.lower())
+        if not resolved:
+            raise ValueError(f"Unknown template '{selected}'")
+        return resolved
+
+    def _load_template_details(
+        template_name: str,
+    ) -> tuple[LabelTemplate, list[TemplateOption], bool]:
+        try:
+            template = get_template(template_name)
+        except SystemExit as exc:
+            raise ValueError(str(exc)) from exc
+        option_specs = template.available_options()
+        has_page_size = template.page_size is not None
+        return template, option_specs, has_page_size
+
+    def _apply_template_options(
+        labels: list[LabelContent],
+        options_by_location: dict[str, dict[str, str]],
+    ) -> list[LabelContent]:
+        updated_labels: list[LabelContent] = []
+        for label in labels:
+            location_options = options_by_location.get(label.id)
+            if location_options:
+                updated_label = replace(
+                    label,
+                    template_options=location_options,
+                )
+            else:
+                updated_label = label
+            updated_labels.append(updated_label)
+        return updated_labels
+
+    def _render_labels_response(
+        template: LabelTemplate,
+        labels: list[LabelContent],
+        skip_labels: int,
+        error_endpoint: str,
+        download_name: str,
+    ) -> Response:
+        if template.page_size:
+            tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
+            tmp_file.close()
+            try:
+                render(tmp_file.name, template, labels, skip_labels)
+            except Exception as exc:  # pragma: no cover
+                os.remove(tmp_file.name)
+                return _redirect_generation_error(error_endpoint, exc)
+
+            @after_this_request
+            def cleanup_pdf(  # pyright: ignore[reportUnusedFunction]
+                response: Response,
+            ) -> Response:
+                try:
+                    os.remove(tmp_file.name)
+                except OSError:
+                    pass
+                return response
+
+            return send_file(
+                tmp_file.name,
+                mimetype="application/pdf",
+                as_attachment=True,
+                download_name=download_name,
+            )
+
+        tmp_dir = TemporaryDirectory()
+        prefix = str(Path(tmp_dir.name) / "homebox_labels")
+        try:
+            render(prefix, template, labels, skip_labels)
+        except Exception as exc:  # pragma: no cover
+            tmp_dir.cleanup()
+            return _redirect_generation_error(error_endpoint, exc)
+
+        png_files = sorted(Path(tmp_dir.name).glob("homebox_labels_*.png"))
+        if not png_files:
+            tmp_dir.cleanup()
+            return _redirect_generation_error(
+                error_endpoint,
+                "No PNG files were generated.",
+            )
+
+        zip_tmp = NamedTemporaryFile(delete=False, suffix=".zip")
+        zip_tmp.close()
+        with zipfile.ZipFile(zip_tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for f in png_files:
+                zf.write(f, arcname=f.name)
+
+        @after_this_request
+        def cleanup_zip(  # pyright: ignore[reportUnusedFunction]
+            response: Response,
+        ) -> Response:
+            try:
+                os.remove(zip_tmp.name)
+            except OSError:
+                pass
+            try:
+                tmp_dir.cleanup()
+            except Exception:
+                pass
+            return response
+
+        return send_file(
+            zip_tmp.name,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name="homebox_labels_png.zip",
+        )
+
+    def _redirect_generation_error(endpoint: str, exc: Exception | str) -> Response:
+        return redirect(
+            url_for(endpoint, error="generation", message=str(exc))
+        )
+
     @app.route("/", methods=["GET"])
     def index() -> Response | str:  # pyright: ignore[reportUnusedFunction]
         return redirect(url_for("locations_index"))
@@ -226,27 +346,15 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             return redirect(url_for("locations_index", error="no-selection"))
         base_ids = _dedupe_base_ids(selected_ids)
 
-        selected_template = request.form.get(
-            "template_name") or template_choices[0]
-
-        # Validate template name exists
-        if selected_template.lower() not in [t.lower() for t in template_choices]:
-            return redirect(
-                url_for("locations_index", error="generation",
-                        message=f"Unknown template '{selected_template}'")
-            )
-
-        # Load template options for the selected template
-        option_specs = []
-        has_page_size = False
         try:
-            current_template = get_template(selected_template)
-            option_specs = current_template.available_options()
-            has_page_size = current_template.page_size is not None
-        except SystemExit as exc:
-            return redirect(
-                url_for("locations_index", error="generation", message=str(exc))
+            selected_template = _resolve_template_name(
+                request.form.get("template_name"),
             )
+            _, option_specs, has_page_size = _load_template_details(
+                selected_template,
+            )
+        except ValueError as exc:
+            return _redirect_generation_error("locations_index", exc)
 
         skip_labels = int(request.form.get("skip", "0") or "0")
         copies = int(request.form.get("copies", "1") or "1")
@@ -258,7 +366,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                        for loc_id in base_ids if loc_id in loc_by_id]
             label_contents = locations_to_label_contents(ordered, base_ui)
         except Exception as exc:  # pragma: no cover
-            return redirect(url_for("locations_index", error="generation", message=str(exc)))
+            return _redirect_generation_error("locations_index", exc)
 
         rows: list[dict[str, str | dict[str, str]]] = []
         for label in label_contents:
@@ -297,24 +405,15 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         if not selected_ids:
             return redirect(url_for("locations_index", error="no-selection"))
 
-        selected_template = request.form.get("template_name")
-        if not selected_template:
-            return redirect(
-                url_for(
-                    "locations_index",
-                    error="generation",
-                    message="Template selection is required.",
-                )
-            )
-
         try:
-            template = get_template(selected_template)
-        except SystemExit as exc:
-            return redirect(
-                url_for("locations_index", error="generation", message=str(exc))
+            selected_template = _resolve_template_name(
+                request.form.get("template_name"),
             )
-
-        option_specs = template.available_options()
+            template, option_specs, _ = _load_template_details(
+                selected_template,
+            )
+        except ValueError as exc:
+            return _redirect_generation_error("locations_index", exc)
         option_names = [opt.name for opt in option_specs]
 
         try:
@@ -331,14 +430,11 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     lc = replace(lc, id=loc_id)
                 labels.append(lc)
         except Exception as exc:  # pragma: no cover
-            return redirect(url_for("locations_index", error="generation", message=str(exc)))
+            return _redirect_generation_error("locations_index", exc)
         if not labels:
-            return redirect(
-                url_for(
-                    "locations_index",
-                    error="generation",
-                    message="No matching labels were generated.",
-                )
+            return _redirect_generation_error(
+                "locations_index",
+                "No matching labels were generated.",
             )
 
         # Parse template options from form and apply to labels
@@ -348,96 +444,16 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             option_names,
         )
 
-        # Update labels with their template options
-        updated_labels: list[LabelContent] = []
-        for label in labels:
-            location_options = options_by_location.get(label.id, {})
-            if location_options:
-                updated_label = replace(
-                    label,
-                    template_options=location_options,
-                )
-            else:
-                updated_label = label
-            updated_labels.append(updated_label)
+        updated_labels = _apply_template_options(labels, options_by_location)
 
         skip_labels = int(request.form.get("skip", "0") or "0")
-
-        # Branch on template output type: PDF vs PNG bundle
-        if template.page_size:
-            tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
-            tmp_file.close()
-            try:
-                render(tmp_file.name, template, updated_labels, skip_labels)
-            except Exception as exc:  # pragma: no cover
-                os.remove(tmp_file.name)
-                return redirect(url_for("locations_index", error="generation", message=str(exc)))
-
-            download_name = "homebox_labels.pdf"
-
-            @after_this_request
-            def cleanup_pdf(  # pyright: ignore[reportUnusedFunction]
-                response: Response,
-            ) -> Response:
-                try:
-                    os.remove(tmp_file.name)
-                except OSError:
-                    pass
-                return response
-
-            return send_file(
-                tmp_file.name,
-                mimetype="application/pdf",
-                as_attachment=True,
-                download_name=download_name,
-            )
-        else:
-            # PNG outputs: render to a temp dir, zip them, and return the zip
-            tmp_dir = TemporaryDirectory()
-            prefix = str(Path(tmp_dir.name) / "homebox_labels")
-            try:
-                render(prefix, template, updated_labels, skip_labels)
-            except Exception as exc:  # pragma: no cover
-                tmp_dir.cleanup()
-                return redirect(url_for("locations_index", error="generation", message=str(exc)))
-
-            png_files = sorted(Path(tmp_dir.name).glob("homebox_labels_*.png"))
-            if not png_files:
-                tmp_dir.cleanup()
-                return redirect(
-                    url_for(
-                        "locations_index",
-                        error="generation",
-                        message="No PNG files were generated.",
-                    )
-                )
-
-            zip_tmp = NamedTemporaryFile(delete=False, suffix=".zip")
-            zip_tmp.close()
-            with zipfile.ZipFile(zip_tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                for f in png_files:
-                    zf.write(f, arcname=f.name)
-
-            @after_this_request
-            def cleanup_zip(  # pyright: ignore[reportUnusedFunction]
-                response: Response,
-            ) -> Response:
-                try:
-                    os.remove(zip_tmp.name)
-                except OSError:
-                    pass
-                try:
-                    tmp_dir.cleanup()
-                except Exception:
-                    pass
-                return response
-
-            return send_file(
-                zip_tmp.name,
-                mimetype="application/zip",
-                as_attachment=True,
-                download_name="homebox_labels_png.zip",
-            )
+        return _render_labels_response(
+            template,
+            updated_labels,
+            skip_labels,
+            "locations_index",
+            "homebox_labels.pdf",
+        )
 
     # Asset routes
     @app.route("/assets", methods=["GET"])
@@ -507,27 +523,15 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             return redirect(url_for("assets_index", error="no-selection"))
         base_ids = _dedupe_base_ids(selected_ids)
 
-        selected_template = request.form.get(
-            "template_name") or template_choices[0]
-
-        # Validate template name exists
-        if selected_template.lower() not in [t.lower() for t in template_choices]:
-            return redirect(
-                url_for("assets_index", error="generation",
-                        message=f"Unknown template '{selected_template}'")
-            )
-
-        # Load template options for the selected template
-        option_specs = []
-        has_page_size = False
         try:
-            current_template = get_template(selected_template)
-            option_specs = current_template.available_options()
-            has_page_size = current_template.page_size is not None
-        except SystemExit as exc:
-            return redirect(
-                url_for("assets_index", error="generation", message=str(exc))
+            selected_template = _resolve_template_name(
+                request.form.get("template_name") or template_choices[0],
             )
+            _, option_specs, has_page_size = _load_template_details(
+                selected_template,
+            )
+        except ValueError as exc:
+            return _redirect_generation_error("assets_index", exc)
 
         skip_labels = int(request.form.get("skip", "0") or "0")
         copies = int(request.form.get("copies", "1") or "1")
@@ -538,7 +542,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             label_contents = assets_to_label_contents(
                 assets, api_manager.base_url)
         except Exception as exc:  # pragma: no cover
-            return redirect(url_for("assets_index", error="generation", message=str(exc)))
+            return _redirect_generation_error("assets_index", exc)
 
         rows: list[dict[str, str | dict[str, str]]] = []
         for label in label_contents:
@@ -577,24 +581,15 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         if not selected_ids:
             return redirect(url_for("assets_index", error="no-selection"))
 
-        selected_template = request.form.get("template_name")
-        if not selected_template:
-            return redirect(
-                url_for(
-                    "assets_index",
-                    error="generation",
-                    message="Template selection is required.",
-                )
-            )
-
         try:
-            template = get_template(selected_template)
-        except SystemExit as exc:
-            return redirect(
-                url_for("assets_index", error="generation", message=str(exc))
+            selected_template = _resolve_template_name(
+                request.form.get("template_name") or template_choices[0],
             )
-
-        option_specs = template.available_options()
+            template, option_specs, _ = _load_template_details(
+                selected_template,
+            )
+        except ValueError as exc:
+            return _redirect_generation_error("assets_index", exc)
         option_names = [opt.name for opt in option_specs]
 
         try:
@@ -611,14 +606,11 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     lc = replace(lc, id=asset_id)
                 labels.append(lc)
         except Exception as exc:  # pragma: no cover
-            return redirect(url_for("assets_index", error="generation", message=str(exc)))
+            return _redirect_generation_error("assets_index", exc)
         if not labels:
-            return redirect(
-                url_for(
-                    "assets_index",
-                    error="generation",
-                    message="No matching labels were generated.",
-                )
+            return _redirect_generation_error(
+                "assets_index",
+                "No matching labels were generated.",
             )
 
         # Parse template options from form and apply to labels
@@ -628,92 +620,16 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
             option_names,
         )
 
-        # Update labels with their template options
-        updated_labels: list[LabelContent] = []
-        for label in labels:
-            location_options = options_by_location.get(label.id, {})
-            if location_options:
-                updated_label = replace(
-                    label,
-                    template_options=location_options,
-                )
-            else:
-                updated_label = label
-            updated_labels.append(updated_label)
+        updated_labels = _apply_template_options(labels, options_by_location)
 
         skip_labels = int(request.form.get("skip", "0") or "0")
-
-        if template.page_size:
-            tmp_file = NamedTemporaryFile(delete=False, suffix=".pdf")
-            tmp_file.close()
-            try:
-                render(tmp_file.name, template, updated_labels, skip_labels)
-            except Exception as exc:  # pragma: no cover
-                os.remove(tmp_file.name)
-                return redirect(url_for("assets_index", error="generation", message=str(exc)))
-
-            @after_this_request
-            def cleanup_pdf(  # pyright: ignore[reportUnusedFunction]
-                response: Response,
-            ) -> Response:
-                try:
-                    os.remove(tmp_file.name)
-                except OSError:
-                    pass
-                return response
-
-            return send_file(
-                tmp_file.name,
-                mimetype="application/pdf",
-                as_attachment=True,
-                download_name="homebox_labels.pdf",
-            )
-        else:
-            tmp_dir = TemporaryDirectory()
-            prefix = str(Path(tmp_dir.name) / "homebox_labels")
-            try:
-                render(prefix, template, updated_labels, skip_labels)
-            except Exception as exc:  # pragma: no cover
-                tmp_dir.cleanup()
-                return redirect(url_for("assets_index", error="generation", message=str(exc)))
-
-            png_files = sorted(Path(tmp_dir.name).glob("homebox_labels_*.png"))
-            if not png_files:
-                tmp_dir.cleanup()
-                return redirect(
-                    url_for(
-                        "assets_index",
-                        error="generation",
-                        message="No PNG files were generated.",
-                    )
-                )
-
-            zip_tmp = NamedTemporaryFile(delete=False, suffix=".zip")
-            zip_tmp.close()
-            with zipfile.ZipFile(zip_tmp.name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                for f in png_files:
-                    zf.write(f, arcname=f.name)
-
-            @after_this_request
-            def cleanup_zip(  # pyright: ignore[reportUnusedFunction]
-                response: Response,
-            ) -> Response:
-                try:
-                    os.remove(zip_tmp.name)
-                except OSError:
-                    pass
-                try:
-                    tmp_dir.cleanup()
-                except Exception:
-                    pass
-                return response
-
-            return send_file(
-                zip_tmp.name,
-                mimetype="application/zip",
-                as_attachment=True,
-                download_name="homebox_labels_png.zip",
-            )
+        return _render_labels_response(
+            template,
+            updated_labels,
+            skip_labels,
+            "assets_index",
+            "homebox_labels.pdf",
+        )
 
     return app
 
