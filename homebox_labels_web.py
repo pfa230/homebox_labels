@@ -348,7 +348,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
 
         try:
             selected_template = _resolve_template_name(
-                request.form.get("template_name"),
+                request.form.get("template_name") or template_choices[0],
             )
             _, option_specs, has_page_size = _load_template_details(
                 selected_template,
