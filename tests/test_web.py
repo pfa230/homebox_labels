@@ -16,7 +16,10 @@ class _FakeApiManager:
 
 class WebUiTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.app: Flask = create_app(cast(HomeboxApiManager, _FakeApiManager()))
+        self.app: Flask = create_app(
+            cast(HomeboxApiManager, _FakeApiManager()),
+            base_ui="http://homebox",
+        )
         self.app.config["TESTING"] = True
         self.client: FlaskClient = self.app.test_client()
 

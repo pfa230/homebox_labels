@@ -40,14 +40,19 @@ from label_templates.base import LabelTemplate, TemplateOption
 __all__ = ["run_web_app", "create_app", "create_app_from_env"]
 
 
-def create_app(api_manager: HomeboxApiManager) -> Flask:
+def create_app(
+    api_manager: HomeboxApiManager,
+    base_ui: str,
+) -> Flask:
     """Create the Flask app wired to the provided API manager."""
     template_dir = Path(__file__).resolve().parent / "templates"
     app = Flask(__name__, template_folder=str(template_dir))
     app.config["SECRET_KEY"] = os.getenv(
         "FLASK_SECRET_KEY", "homebox-labels-ui")
 
-    base_ui = api_manager.base_url or ""
+    base_ui = (base_ui or "").rstrip("/")
+    if not base_ui:
+        raise RuntimeError("Homebox base UI URL is required.")
 
     template_choices = list(list_templates())
     if not template_choices:
@@ -303,7 +308,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                     "parent": (loc.parent or "").strip(),
                     "asset_count": loc.asset_count,
                     "assets_link": url_for("assets_index", location=loc.id),
-                    "homebox_location_link": build_ui_url(api_manager.base_url, loc.id),
+                    "homebox_location_link": build_ui_url(base_ui, loc.id),
                     "labels": ", ".join(loc.labels).strip(),
                     "description": _truncate(loc.description, 160),
                 }
@@ -479,7 +484,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                 "parent_asset": asset.parent_asset,
                 "location": asset.location,
                 "location_id": asset.location_id,
-                "homebox_asset_link": build_asset_ui_url(api_manager.base_url, asset.id),
+                "homebox_asset_link": build_asset_ui_url(base_ui, asset.id),
                 "labels": _truncate(", ".join(asset.labels).strip(), 80),
                 "description": _truncate(asset.description, 160),
             }
@@ -539,8 +544,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
         try:
             assets = collect_assets(api_manager, name_pattern=None)
             assets = [a for a in assets if a.id in base_ids]
-            label_contents = assets_to_label_contents(
-                assets, api_manager.base_url)
+            label_contents = assets_to_label_contents(assets, base_ui)
         except Exception as exc:  # pragma: no cover
             return _redirect_generation_error("assets_index", exc)
 
@@ -601,7 +605,7 @@ def create_app(api_manager: HomeboxApiManager) -> Flask:
                 asset = asset_map.get(base_id)
                 if not asset:
                     continue
-                lc = assets_to_label_contents([asset], api_manager.base_url)[0]
+                lc = assets_to_label_contents([asset], base_ui)[0]
                 if asset_id != asset.id:
                     lc = replace(lc, id=asset_id)
                 labels.append(lc)
@@ -642,16 +646,18 @@ def create_app_from_env() -> Flask:
         username=os.getenv("HOMEBOX_USERNAME", ""),
         password=os.getenv("HOMEBOX_PASSWORD", ""),
     )
-    return create_app(api_manager)
+    base_ui = os.getenv("HOMEBOX_BASE_URL", "")
+    return create_app(api_manager, base_ui=base_ui)
 
 
 def run_web_app(
     api_manager: HomeboxApiManager,
     host: str,
     port: int,
+    base_ui: str,
 ) -> None:
     """Launch a lightweight Flask app for interactive label selection."""
-    app = create_app(api_manager)
+    app = create_app(api_manager, base_ui=base_ui)
 
     # Enable reloader so code changes auto-restart the dev server.
     use_reloader_env = os.getenv("USE_RELOADER")
@@ -687,11 +693,13 @@ def main(argv: list[str] | None = None) -> int:
         username=os.getenv("HOMEBOX_USERNAME", ""),
         password=os.getenv("HOMEBOX_PASSWORD", ""),
     )
+    base_ui = os.getenv("HOMEBOX_BASE_URL", "")
 
     run_web_app(
         api_manager=api_manager,
         host=args.host,
         port=args.port,
+        base_ui=base_ui,
     )
     return 0
 

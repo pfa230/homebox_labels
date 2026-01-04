@@ -81,11 +81,14 @@ Create a `.env` file (or export vars):
 
 ```
 HOMEBOX_API_URL=http://localhost:7745
+HOMEBOX_BASE_URL=http://localhost:7745
 HOMEBOX_USERNAME=...
 HOMEBOX_PASSWORD=...
 # Optional
 HOMEBOX_LOCATION_ID_REGEX=^\s*([^|]+?)\s*\|\s*(.*)$
 ```
+
+`HOMEBOX_BASE_URL` controls the base used for UI links/QR codes.
 
 ## Run Locally
 
@@ -101,6 +104,7 @@ Default UI is on `http://127.0.0.1:4000` when running locally.
 docker pull ghcr.io/pfa230/homebox_labels:latest
 docker run --rm -p 4000:4000 \
   -e HOMEBOX_API_URL=... \
+  -e HOMEBOX_BASE_URL=... \
   -e HOMEBOX_USERNAME=... \
   -e HOMEBOX_PASSWORD=... \
   ghcr.io/pfa230/homebox_labels:latest
@@ -119,6 +123,7 @@ services:
       - "4000:4000"
     environment:
       HOMEBOX_API_URL: ${HOMEBOX_API_URL}
+      HOMEBOX_BASE_URL: ${HOMEBOX_BASE_URL}
       HOMEBOX_USERNAME: ${HOMEBOX_USERNAME}
       HOMEBOX_PASSWORD: ${HOMEBOX_PASSWORD}
       FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-homebox-labels-ui}
