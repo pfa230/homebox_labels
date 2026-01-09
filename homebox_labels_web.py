@@ -287,11 +287,17 @@ def create_app(
         except Exception as exc:  # pragma: no cover - best effort message
             return Response(f"Failed to load locations: {exc}", status=500)
 
-        default_with_id = "1"
-        show_only_with_id = (
-            (request.args.get("with_id", default_with_id) or "").lower()
-            in {"1", "true", "yes", "on"}
-        )
+        with_id_values = [
+            (value or "").strip().lower()
+            for value in request.args.getlist("with_id")
+        ]
+        if not with_id_values:
+            show_only_with_id = True
+        else:
+            show_only_with_id = any(
+                value in {"1", "true", "yes", "on"}
+                for value in with_id_values
+            )
 
         rows: list[dict[str, str | int]] = []
         for loc in locations:
@@ -320,7 +326,7 @@ def create_app(
             "locations_index",
             sort_field,
             sort_direction,
-            with_id="1" if show_only_with_id else "",
+            with_id="1" if show_only_with_id else "0",
         )
 
         error_key = request.args.get("error")

@@ -31,6 +31,7 @@
       <div class="error">{{ error }}</div>
     {% endif %}
     <form method="get" action="{{ url_for('locations_index') }}" class="mb-075">
+      <input type="hidden" name="with_id" value="0" />
       <label>
         <input type="checkbox" name="with_id" value="1" {% if show_only_with_id %}checked{% endif %} onchange="this.form.submit()" />
         Show only with ID
